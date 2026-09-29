@@ -1,0 +1,26 @@
+description: >
+  名詞定義集中在 glossary.md，prd.md 只使用名詞不定義。每個檔案強制獨立一批，
+  讀 prd.md 的 Facts agent 看不到定義，用來量測 resolvedQuestions：
+  「鑑賞期、SKU、點數、會員」有答案（該被解答）；「VIP 會員、退貨運費」沒有答案（必須保留）。
+
+packing: per-file
+
+expect:
+  - { id: feat-return, section: features, all: ["退貨"] }
+  - { id: feat-points, section: features, all: ["點數"] }
+  - { id: br-points-refund, section: businessRules, all: ["點數", "退回"] }
+  - { id: br-vip-no-review, section: businessRules, all: ["VIP"] }
+  - { id: term-appraisal, section: glossary, all: ["鑑賞期", "7 天"] }
+  - { id: term-sku, section: glossary, all: ["SKU", "庫存單位"] }
+  - { id: term-points, section: glossary, all: ["點數", "100 元"] }
+  - { id: term-member, section: [glossary, actors], all: ["會員"] }
+
+openQuestions:
+  mustRemainOpen:
+    - { id: vip-definition, any: ["VIP"] }
+    - { id: return-shipping-fee, any: ["運費"] }
+  shouldBeResolved:
+    - { id: appraisal-period, any: ["鑑賞期"] }
+    - { id: sku, any: ["SKU"] }
+    - { id: points-rule, any: ["點數"] }
+    - { id: member-definition, any: ["會員是", "會員的定義", "何謂會員", "會員指"] }

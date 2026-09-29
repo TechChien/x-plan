@@ -1,0 +1,12 @@
+{
+  "provider": {
+    "baseUrl": "https://litellm.internal/v1",
+    "apiKeyEnv": "XPLAN_API_KEY",
+    "model": "gpt-oss-120b",
+    "contextWindow": 131072,
+    "maxOutputTokens": 16384
+  },
+  "thinking": "medium",
+  "stages": { "extract": { "thinking": "high" } },
+  "concurrency": 2
+}

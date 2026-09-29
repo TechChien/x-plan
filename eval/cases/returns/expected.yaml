@@ -1,0 +1,29 @@
+description: >
+  電商退貨與取消（單批）。量測整體擷取召回率、跨檔案矛盾（3 天 vs 7 天）偵測，
+  以及真正待確認的問題（TBD、待確認、未定義名詞）是否保留。
+
+packing: auto
+
+expect:
+  - { id: actor-member, section: actors, all: ["會員"] }
+  - { id: actor-cs, section: actors, all: ["客服"] }
+  - { id: feat-cancel, section: features, all: ["取消"] }
+  - { id: feat-return, section: features, all: ["退貨"] }
+  - { id: br-cancel-3d, section: businessRules, all: ["3 天"] }
+  - { id: br-cancel-7d, section: businessRules, all: ["7 天"] }
+  - { id: br-review, section: [businessRules, features], all: ["審核"] }
+  - { id: ac-refund, section: acceptanceCriteria, all: ["原付款方式"] }
+  - { id: nfr-2s, section: nonFunctional, all: ["2 秒"] }
+  - { id: term-sku, section: glossary, all: ["SKU", "庫存單位"] }
+  - { id: dep-gateway, section: dependencies, all: ["金流閘道"] }
+  - { id: oos-crossborder, section: outOfScope, all: ["跨境"] }
+
+contradictions:
+  - { id: cancel-window, between: [["3 天"], ["7 天"]] }
+
+openQuestions:
+  mustRemainOpen:
+    - { id: shipped-order, any: ["出貨"] }
+    - { id: return-shipping-fee, any: ["運費"] }
+    - { id: appraisal-period, any: ["鑑賞期"] }
+  shouldBeResolved: []
