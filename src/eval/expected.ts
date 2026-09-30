@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import { parse as parseYaml } from "yaml";
-import { OUTPUT_LANGUAGES } from "../extract/language.ts";
+import { OUTPUT_LANGUAGES } from "../shared/language.ts";
 
 const Keywords = Type.Array(Type.String(), { minItems: 1 });
 /** A question label: matches an open question whose text contains ANY keyword. */

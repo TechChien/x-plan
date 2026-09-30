@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import { Command, Option } from "commander";
 import { PiBackend } from "./agent/pi-backend.ts";
 import { findConfigPath, loadConfig, parseConfig, type XPlanConfig } from "./config.ts";
-import { OUTPUT_LANGUAGES, type OutputLanguage } from "./extract/language.ts";
+import { OUTPUT_LANGUAGES, type OutputLanguage } from "./shared/language.ts";
 import { runExtract } from "./extract/stage.ts";
 
 const program = new Command();

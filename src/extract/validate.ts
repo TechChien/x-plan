@@ -1,5 +1,5 @@
 import type { SourceIndex } from "./evidence.ts";
-import { languageErrors, type OutputLanguage } from "./language.ts";
+import { languageErrors, type OutputLanguage } from "../shared/language.ts";
 import { FACT_SECTIONS, type Evidence, type FactSectionName, type Facts } from "./schema.ts";
 
 export type ItemSection = FactSectionName | "openQuestions";

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { parseConfig } from "../src/config.ts";
-import { languageErrors } from "../src/extract/language.ts";
+import { languageErrors } from "../src/shared/language.ts";
 import { buildAnalysisPrompt, buildFactsSystemPrompt } from "../src/extract/prompts.ts";
 import { emptyFacts } from "../src/extract/merge.ts";
 import { checkLanguage, mergeIssues } from "../src/extract/validate.ts";

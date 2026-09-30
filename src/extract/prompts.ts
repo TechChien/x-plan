@@ -1,15 +1,12 @@
 import { stringify } from "yaml";
 import type { PromptLibrary } from "../prompts/template.ts";
+import type { BuiltPrompt } from "../shared/run-files.ts";
 import type { Bin, Segment } from "../source/binning.ts";
 import { ITEM_SECTIONS } from "./merge.ts";
-import { LANGUAGE_NAMES, type OutputLanguage } from "./language.ts";
+import { LANGUAGE_NAMES, type OutputLanguage } from "../shared/language.ts";
 import type { Evidence, FactSectionName, Facts } from "./schema.ts";
 import { itemsOf } from "./validate.ts";
 
-export interface BuiltPrompt {
-  systemPrompt: string;
-  userMessage: string;
-}
 
 export const ANALYSIS_SECTIONS = ["contradictions", "openQuestions", "assumptions"] as const;
 
@@ -119,6 +116,3 @@ export function factsToYaml(facts: Facts): string {
   return stringify(view, { lineWidth: 0 }).trimEnd();
 }
 
-export function buildNudge(lib: PromptLibrary, toolName: string): string {
-  return lib.render("shared/nudge-submit", { toolName }).trim();
-}

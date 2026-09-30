@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
-import { OUTPUT_LANGUAGES } from "./extract/language.ts";
+import { OUTPUT_LANGUAGES } from "./shared/language.ts";
 
 /** Sent as-is as `reasoning_effort`; which values are accepted depends on the served model. */
 export const ThinkingLevelSchema = Type.Union([Type.Literal("low"), Type.Literal("medium"), Type.Literal("high"), Type.Literal("xhigh")]);

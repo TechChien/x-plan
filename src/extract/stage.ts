@@ -1,7 +1,6 @@
-import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { runSubmitTask, type SubmitTask, type TaskMetrics, type TaskOutcome } from "../agent/submit-task.ts";
-import { TraceRecorder } from "../agent/trace.ts";
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
+import type { SubmitTask, TaskMetrics, TaskOutcome } from "../agent/submit-task.ts";
 import type { AgentBackend } from "../agent/types.ts";
 import { thinkingFor, type XPlanConfig } from "../config.ts";
 import { PromptLibrary, sha256 } from "../prompts/template.ts";
@@ -10,9 +9,11 @@ import { convertFile, type SourceText } from "../source/convert.ts";
 import { scanDirectory } from "../source/scan.ts";
 import { applyAnalysis, checkAnalysis, type OpIssue } from "./apply-analysis.ts";
 import { SourceIndex } from "./evidence.ts";
-import { LANGUAGE_NAMES, languageErrors, type OutputLanguage } from "./language.ts";
+import { LANGUAGE_NAMES, languageErrors, type OutputLanguage } from "../shared/language.ts";
 import { mergeFacts } from "./merge.ts";
-import { buildAnalysisPrompt, buildFactsPrompt, buildFactsSystemPrompt, buildNudge, type BuiltPrompt } from "./prompts.ts";
+import { savePrompt, writeJson, writeText, type BuiltPrompt } from "../shared/run-files.ts";
+import { buildNudge, runTraced, validationFeedback } from "../shared/traced.ts";
+import { buildAnalysisPrompt, buildFactsPrompt, buildFactsSystemPrompt } from "./prompts.ts";
 import { renderBriefMarkdown } from "./render.ts";
 import {
   AnalysisSubmissionSchema,
@@ -284,16 +285,7 @@ export async function runExtract(opts: ExtractOptions): Promise<ExtractReport> {
   return { status, failures, warnings, runDir, brief, rejected };
 }
 
-async function runTraced<P, R>(backend: AgentBackend, task: SubmitTask<P, R>, traceDir: string): Promise<TaskOutcome<R>> {
-  const trace = new TraceRecorder(traceDir, task.label);
-  const outcome = await runSubmitTask(backend, task, trace);
-  trace.finish(outcome);
-  return outcome;
-}
 
-function validationFeedback(lib: PromptLibrary, toolName: string, errors: string, count: number): string {
-  return lib.render("shared/validation-errors", { toolName, count: String(count), errors }).trim();
-}
 
 /** Language of the items Analysis adds to the Brief; merge and resolution reasons only reach the log. */
 function checkAnalysisLanguage(ops: AnalysisSubmission, lang: OutputLanguage): OpIssue[] {
@@ -340,19 +332,8 @@ function binSummary(bin: Bin) {
   };
 }
 
-function savePrompt(runDir: string, label: string, prompt: BuiltPrompt): void {
-  writeText(join(runDir, "prompts", `${label}.system.md`), prompt.systemPrompt);
-  writeText(join(runDir, "prompts", `${label}.user.md`), prompt.userMessage);
-}
 
-function writeText(path: string, text: string): void {
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, text);
-}
 
-function writeJson(path: string, value: unknown): void {
-  writeText(path, `${JSON.stringify(value, null, 2)}\n`);
-}
 
 async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]> {
   const results = new Array<R>(items.length);
