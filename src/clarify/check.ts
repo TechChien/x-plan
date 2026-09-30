@@ -72,7 +72,7 @@ export function checkRound(state: ClarifyState, submission: RoundSubmission | Fi
   };
 
   // Decisions.
-  let nextDec = nextNumber([...state.decisions.map((d) => d.id), ...state.rejected.filter((r) => r.kind === "decision").map((r) => idOf(r.item))]);
+  let nextDec = nextDecisionNumber(state);
   const decisions = submission.decisions.map((op, i) => ({ op, index: i, id: `DEC-${nextDec++}`, errors: [] as string[], wrongLanguage: false }));
   const revisedHere = new Set(decisions.flatMap((d) => d.op.revises));
   const supersededBy = new Map<string, string>();
@@ -265,6 +265,11 @@ function collectBriefIds(brief: RequirementBrief): Set<string> {
     for (const entry of list as { id?: unknown }[]) if (typeof entry.id === "string") ids.add(entry.id);
   }
   return ids;
+}
+
+/** Decisions are numbered after every id used so far, rejected ones included, so an id never means two things. */
+export function nextDecisionNumber(state: ClarifyState): number {
+  return nextNumber([...state.decisions.map((d) => d.id), ...state.rejected.filter((r) => r.kind === "decision").map((r) => idOf(r.item))]);
 }
 
 function idOf(item: unknown): string {
