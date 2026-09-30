@@ -105,3 +105,29 @@ _Avoid_: Conflict, inconsistency
 **Assumption**:
 原文未明寫、由模型推論而來的內容；唯一允許不附 Evidence 的條目，必須與有原文依據的事實分開存放。
 _Avoid_: Guess, inference
+
+## 對齊
+
+**Agenda Item**:
+Clarify 中等待使用者確認的一個項目：來自 Requirement Brief 的 Open Question、Contradiction、Assumption，Clarify 過程中產生的 Follow-up Question，或使用者主動補充的說明。
+_Avoid_: Question, ticket, issue
+
+**Round**:
+Clarify 中的一次問答循環：解讀上一輪的 Answer，再向使用者提出一批 Agenda Item。
+_Avoid_: Turn, iteration, pass
+
+**Answer**:
+使用者對某個 Agenda Item 的原話回覆，包括採用建議答案；一經記錄就不修改。
+_Avoid_: Reply, response, input
+
+**Follow-up Question**:
+Clarify 過程中新產生的 Agenda Item：可能是某則 Answer 不夠明確而需要的追問，也可能是為了寫出 Gherkin 而發現的缺口。
+_Avoid_: Sub-question, clarification
+
+**Decision**:
+由一則 Answer 解讀出的結論，可以結案 Agenda Item、推翻或確認 Requirement Brief 中的條目，或更正先前的 Decision；每條 Decision 都必須能追溯到一則 Answer。
+_Avoid_: Resolution, conclusion, ruling
+
+**Aligned Brief**:
+Clarify 的產出：原樣保留的 Requirement Brief，加上全部 Decision 與每個 Agenda Item 的最終狀態，是 Write 唯一的輸入。
+_Avoid_: Final brief, clarified brief
