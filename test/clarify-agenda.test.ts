@@ -69,10 +69,17 @@ describe("recordAnswers", () => {
     expect(item(state, "OQ-2")).toMatchObject({ status: "deferred", laterCount: 2 });
   });
 
-  test("items the user did not get to stay asked", () => {
+  test("the batch keeps waiting for the user until every asked item has a response", () => {
+    const state = recordAnswers(asked(["OQ-1", "OQ-2"]), [respond("OQ-1", "text", "不可取消")], meta);
+    expect(state.phase).toBe("answer");
+    expect(recordAnswers(state, [respond("OQ-2", "later")], meta).phase).toBe("interpret");
+  });
+
+  test("after /done, items the user did not get to stay asked and the round moves on", () => {
     const state = recordAnswers(asked(["OQ-1", "OQ-2"]), [respond("OQ-1", "text", "不可取消"), { type: "done" }], meta);
     expect(item(state, "OQ-2").status).toBe("asked");
     expect(state.doneRequested).toBe(true);
+    expect(state.phase).toBe("interpret");
   });
 
   test("a note becomes an answered NOTE item, with an optional target", () => {

@@ -101,7 +101,9 @@ export function recordAnswers(current: ClarifyState, inputs: UserInput[], meta: 
       }
     }
   }
-  state.phase = "interpret";
+  // Answers may be recorded one at a time (and saved) while the user works through the batch.
+  const waiting = state.agenda.some((i) => i.status === "asked");
+  state.phase = waiting && !state.doneRequested ? "answer" : "interpret";
   return settle(state);
 }
 
