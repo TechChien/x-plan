@@ -54,6 +54,8 @@ export class PiBackend implements AgentBackend {
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
           contextWindow: provider.contextWindow,
           maxTokens: provider.maxOutputTokens,
+          // PI clamps xhigh down to high unless the model maps it.
+          thinkingLevelMap: { xhigh: "xhigh" },
           compat: { ...DEFAULT_COMPAT, ...provider.compat } as Model<"openai-completions">["compat"],
         },
       ],

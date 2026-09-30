@@ -4,7 +4,8 @@ import { join, resolve } from "node:path";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 
-export const ThinkingLevelSchema = Type.Union([Type.Literal("low"), Type.Literal("medium"), Type.Literal("high")]);
+/** Sent as-is as `reasoning_effort`; which values are accepted depends on the served model. */
+export const ThinkingLevelSchema = Type.Union([Type.Literal("low"), Type.Literal("medium"), Type.Literal("high"), Type.Literal("xhigh")]);
 export type ThinkingLevel = Static<typeof ThinkingLevelSchema>;
 
 const StageOverrideSchema = Type.Object({ thinking: Type.Optional(ThinkingLevelSchema) });
