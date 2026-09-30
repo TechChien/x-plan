@@ -1,7 +1,9 @@
 description: >
   名詞定義集中在 glossary.md，prd.md 只使用名詞不定義。每個檔案強制獨立一批，
-  讀 prd.md 的 Facts agent 看不到定義，用來量測 resolvedQuestions：
-  「鑑賞期、SKU、點數、會員」有答案（該被解答）；「VIP 會員、退貨運費」沒有答案（必須保留）。
+  讀 prd.md 的 Facts agent 看不到定義，量測跨批次的問題：
+  「VIP 會員、退貨運費」沒有答案（必須提出）；「鑑賞期、SKU、點數規則、會員」的定義在 glossary.md（不該提出，
+  batch 資訊應該抑制它們）。Analysis 不再自行解答問題（ADR 0003），所以提出了就會留在 Brief 中。
+  shouldNotBeRaised 只收定義型的問法：「點數折抵有無上限」「部分退貨如何分攤」等 glossary 沒回答的問題是正當的。
 
 packing: per-file
 language: zh
@@ -9,7 +11,7 @@ language: zh
 expect:
   - { id: feat-return, section: features, all: ["退貨"] }
   - { id: feat-points, section: features, all: ["點數"] }
-  - { id: br-points-refund, section: businessRules, all: ["點數", "退回"] }
+  - { id: br-points-refund, section: [businessRules, features], all: ["點數", "退回"] }
   - { id: br-vip-no-review, section: businessRules, all: ["VIP"] }
   - { id: term-appraisal, section: glossary, all: ["鑑賞期", "7 天"] }
   - { id: term-sku, section: glossary, all: ["SKU", "庫存單位"] }
@@ -17,11 +19,11 @@ expect:
   - { id: term-member, section: [glossary, actors], all: ["會員"] }
 
 openQuestions:
-  mustRemainOpen:
+  mustBeRaised:
     - { id: vip-definition, any: ["VIP"] }
     - { id: return-shipping-fee, any: ["運費"] }
-  shouldBeResolved:
-    - { id: appraisal-period, any: ["鑑賞期"] }
-    - { id: sku, any: ["SKU"] }
-    - { id: points-rule, any: ["點數"] }
+  shouldNotBeRaised:
+    - { id: appraisal-period, any: ["鑑賞期的具體", "鑑賞期」的持續", "鑑賞期的天數", "鑑賞期的長度", "鑑賞期的時長", "鑑賞期多長", "鑑賞期是幾天", "鑑賞期為幾天", "鑑賞期是多久"] }
+    - { id: sku, any: ["SKU 是什麼", "SKU 的定義", "何謂 SKU", "SKU 指的是", "SKU 代表"] }
+    - { id: points-rule, any: ["累積比率", "累積比例", "折抵比率", "折抵比例", "兌換比例", "兌換的比例", "消費多少金額", "消費金額對應"] }
     - { id: member-definition, any: ["會員是", "會員的定義", "何謂會員", "會員指"] }

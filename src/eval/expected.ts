@@ -31,10 +31,10 @@ export const ExpectedSchema = Type.Object({
   contradictions: Type.Optional(Type.Array(Type.Object({ id: Type.String(), between: Type.Array(Keywords, { minItems: 2 }) }))),
   openQuestions: Type.Optional(
     Type.Object({
-      /** Genuinely unanswered by the documents: removing such a question is harmful. */
-      mustRemainOpen: Type.Optional(Type.Array(QuestionLabel)),
-      /** Answered somewhere in the documents: if raised, it should be resolved. */
-      shouldBeResolved: Type.Optional(Type.Array(QuestionLabel)),
+      /** Genuinely unanswered by the documents: the Brief must ask them. */
+      mustBeRaised: Type.Optional(Type.Array(QuestionLabel)),
+      /** Answered somewhere in the documents (often in a batch the asking agent could not see): asking is noise. */
+      shouldNotBeRaised: Type.Optional(Type.Array(QuestionLabel)),
     }),
   ),
   /**

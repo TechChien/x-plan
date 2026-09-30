@@ -1,8 +1,8 @@
 {
   "provider": {
-    "baseUrl": "https://litellm.internal/v1",
+    "baseUrl": "http://example.com/v1/completions",
     "apiKeyEnv": "XPLAN_API_KEY",
-    "model": "gpt-oss-120b",
+    "model": "gpt-oss:120b",
     "contextWindow": 131072,
     "maxOutputTokens": 16384
   },

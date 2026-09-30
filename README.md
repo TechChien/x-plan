@@ -92,11 +92,11 @@ XPLAN_API_KEY=... pnpm eval --cases glossary-split --repeat 5  # 指定案例、
 ```
 
 報告寫在 `eval/results/<時間>/report.md`，內容包含：
-- 召回率、矛盾偵測率、雜訊命中率、條目數、Rejected 數、重試次數、token 用量
-- **resolvedQuestions 評估**：用同一次輸出比較「套用」與「不套用」的差別，統計「正確移除 / 誤刪真問題 / 待人工判斷 / 漏解 / 未被提出」
+- 召回率、矛盾偵測率、真問題提出率、多餘問題數、雜訊命中率、條目數、Rejected 數、重試次數、token 用量
+- 每次執行的明細：未擷取的事實、未提出的真問題、多餘的問題、命中的雜訊
 - 報告會記錄 prompt 的 hash，方便比較不同版本的 prompt
 
-每個案例是一個目錄，內含 `docs/` 和 `expected.yaml`。條目用關鍵字比對，不用 id（id 是模型產生的）。`packing: per-file` 會強制每個檔案各自一批；`language` 指定輸出語言（預設 `en`），標註的關鍵字要用同一種語言；參考資料放在 `docs/references/`，或用 `reference` 列出 glob；`unexpected` 列出不該出現在 Brief 的內容，用來量測雜訊（召回率只看有沒有抓到，看不出抓了多少無關的東西）。
+每個案例是一個目錄，內含 `docs/` 和 `expected.yaml`。條目用關鍵字比對，不用 id（id 是模型產生的）。`packing: per-file` 會強制每個檔案各自一批；`language` 指定輸出語言（預設 `en`），標註的關鍵字要用同一種語言；參考資料放在 `docs/references/`，或用 `reference` 列出 glob；`openQuestions.mustBeRaised` 列出文件確實沒回答、Brief 必須提出的問題，`openQuestions.shouldNotBeRaised` 列出文件其實已回答、提出就是多餘的問題；`unexpected` 列出不該出現在 Brief 的內容，用來量測雜訊（召回率只看有沒有抓到，看不出抓了多少無關的東西）。
 
 ## 開發
 

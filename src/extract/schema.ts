@@ -175,13 +175,6 @@ export const AnalysisSubmissionSchema = Type.Object({
       reason: Type.String(),
     }),
   ),
-  resolvedQuestions: Type.Array(
-    Type.Object({
-      questionId: Str("OQ id that is already answered by facts from another batch"),
-      answeredByIds: Type.Array(Type.String(), { minItems: 1 }),
-      reason: Type.String(),
-    }),
-  ),
   contradictions: Type.Array(Type.Object({ conflict: Type.String(), relatedIds: Type.Array(Type.String(), { minItems: 2 }) })),
   openQuestions: Type.Array(
     Type.Object({ question: Type.String(), reason: Type.String(), relatedIds: Type.Array(Type.String()), severity: Severity }),
@@ -189,7 +182,8 @@ export const AnalysisSubmissionSchema = Type.Object({
   assumptions: Type.Array(
     Type.Object({ assumption: Type.String(), rationale: Type.String(), confidence: Confidence, relatedIds: Type.Array(Type.String()) }),
   ),
-});
+  // Closed: Analysis has no operation that answers or removes an open question (ADR 0003).
+}, { additionalProperties: false });
 export type AnalysisSubmission = Static<typeof AnalysisSubmissionSchema>;
 
 export interface RejectedItem {

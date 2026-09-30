@@ -1,7 +1,8 @@
+import { Value } from "typebox/value";
 import { describe, expect, test } from "vitest";
 import { applyAnalysis, checkAnalysis } from "../src/extract/apply-analysis.ts";
 import { emptyFacts } from "../src/extract/merge.ts";
-import type { AnalysisSubmission, Facts } from "../src/extract/schema.ts";
+import { AnalysisSubmissionSchema, type AnalysisSubmission, type Facts } from "../src/extract/schema.ts";
 import { actor, ev, feature, rule } from "./helpers/facts.ts";
 
 function facts(): Facts {
@@ -21,7 +22,6 @@ function facts(): Facts {
 
 const ops = (partial: Partial<AnalysisSubmission>): AnalysisSubmission => ({
   merges: [],
-  resolvedQuestions: [],
   contradictions: [],
   openQuestions: [],
   assumptions: [],
@@ -56,17 +56,20 @@ describe("applyAnalysis", () => {
     expect(brief.contradictions[0]!.relatedIds).toEqual(["BR-2", "BR-3"]);
   });
 
-  test("resolved questions are removed; new questions and assumptions get fresh ids", () => {
+  test("existing questions always stay; new questions and assumptions get fresh ids", () => {
     const { brief } = applyAnalysis(
       facts(),
       ops({
-        resolvedQuestions: [{ questionId: "OQ-1", answeredByIds: ["ACT-1"], reason: "ACT-1 已定義" }],
         openQuestions: [{ question: "已出貨可否取消？", reason: "未說明", relatedIds: ["FEAT-3"], severity: "blocking" }],
         assumptions: [{ assumption: "需登入", rationale: "會員功能", confidence: "medium", relatedIds: ["FEAT-3"] }],
       }),
     );
-    expect(brief.openQuestions.map((q) => q.id)).toEqual(["OQ-2"]);
+    expect(brief.openQuestions.map((q) => q.id)).toEqual(["OQ-1", "OQ-2"]);
     expect(brief.assumptions.map((a) => a.id)).toEqual(["ASM-1"]);
+  });
+
+  test("an Analysis submission that tries to resolve a question is rejected by the schema", () => {
+    expect(Value.Check(AnalysisSubmissionSchema, { ...ops({}), resolvedQuestions: [] })).toBe(false);
   });
 });
 

@@ -43,7 +43,6 @@ const facts = (brCancelQuote: string) => ({
 
 const analysis = {
   merges: [],
-  resolvedQuestions: [],
   contradictions: [{ conflict: "取消期限不一致：3 天 vs 7 天", relatedIds: ["BR-1", "BR-2"] }],
   openQuestions: [{ question: "鑑賞期是幾天？", reason: "faq 使用「鑑賞期」但未定義", relatedIds: ["FEAT-2"], severity: "high" }],
   assumptions: [{ assumption: "取消與退貨都需要登入", rationale: "會員定義為已登入的購物者", confidence: "medium", relatedIds: ["FEAT-1", "FEAT-2"] }],

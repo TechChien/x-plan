@@ -23,8 +23,7 @@ contradictions:
   - { id: cancel-window, between: [["3 天"], ["7 天"]] }
 
 openQuestions:
-  mustRemainOpen:
+  mustBeRaised:
     - { id: shipped-order, any: ["出貨"] }
     - { id: return-shipping-fee, any: ["運費"] }
     - { id: appraisal-period, any: ["鑑賞期"] }
-  shouldBeResolved: []

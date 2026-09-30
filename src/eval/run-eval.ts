@@ -2,7 +2,6 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentBackend } from "../agent/types.ts";
 import type { XPlanConfig } from "../config.ts";
-import type { AnalysisLog } from "../extract/apply-analysis.ts";
 import type { RequirementBrief } from "../extract/schema.ts";
 import { runExtract } from "../extract/stage.ts";
 import { loadExpected } from "./expected.ts";
@@ -74,9 +73,7 @@ export async function runEval(opts: EvalOptions): Promise<RunResult[]> {
         failures = [error instanceof Error ? error.message : String(error)];
       }
       const briefPath = join(runDir, "01-brief.json");
-      const score = existsSync(briefPath)
-        ? scoreCase(expected, readJson<RequirementBrief>(briefPath), readJson<AnalysisLog>(join(runDir, "01-analysis-log.json")))
-        : undefined;
+      const score = existsSync(briefPath) ? scoreCase(expected, readJson<RequirementBrief>(briefPath)) : undefined;
       const run = existsSync(join(runDir, "run.json")) ? readJson<RunJson>(join(runDir, "run.json")) : undefined;
       results.push({
         caseName: c.name,
@@ -131,8 +128,8 @@ export function renderReport(results: RunResult[]): string {
   out.push(
     "## 總覽",
     "",
-    "| case | 成功 | 召回率 | 矛盾偵測 | 雜訊 | 條目數 | Rejected | 交卷次數 (schema/check 錯) | nudges | tokens in/out/reasoning |",
-    "|---|---|---|---|---|---|---|---|---|---|",
+    "| case | 成功 | 召回率 | 矛盾偵測 | 真問題提出 | 多餘問題 | 雜訊 | 條目數 | Rejected | 交卷次數 (schema/check 錯) | nudges | tokens in/out/reasoning |",
+    "|---|---|---|---|---|---|---|---|---|---|---|---|",
   );
   for (const name of cases) {
     const rs = results.filter((r) => r.caseName === name);
@@ -143,15 +140,20 @@ export function renderReport(results: RunResult[]): string {
     const cTotal = scored.reduce((n, r) => n + r.score!.contradictions.found.length + r.score!.contradictions.missing.length, 0);
     const nHit = scored.reduce((n, r) => n + r.score!.noise.hits.length, 0);
     const nTotal = scored.reduce((n, r) => n + r.score!.noise.labels, 0);
+    const qRaised = scored.reduce((n, r) => n + r.score!.questions.raised.length, 0);
+    const qTotal = scored.reduce((n, r) => n + r.score!.questions.raised.length + r.score!.questions.neverRaised.length, 0);
+    const unwanted = scored.reduce((n, r) => n + r.score!.questions.unwanted.reduce((k, u) => k + u.questions.length, 0), 0);
     const items = scored.length ? avg(scored.map((r) => r.score!.items)) : "—";
     const m = (f: (x: RunMetrics) => number) => avg(rs.map((r) => f(r.metrics)));
     out.push(
-      `| ${name} | ${rs.filter((r) => r.status === "succeeded").length}/${rs.length} | ${pct(found, total)} | ${pct(cFound, cTotal)} | ${pct(nHit, nTotal)} | ${items} | ${avg(rs.map((r) => r.rejectedCount))} | ${m((x) => x.submitAttempts)} (${m((x) => x.schemaFailures)}/${m((x) => x.checkFailures)}) | ${m((x) => x.nudges)} | ${m((x) => x.inputTokens)}/${m((x) => x.outputTokens)}/${m((x) => x.reasoningTokens)} |`,
+      `| ${name} | ${rs.filter((r) => r.status === "succeeded").length}/${rs.length} | ${pct(found, total)} | ${pct(cFound, cTotal)} | ${pct(qRaised, qTotal)} | ${unwanted} | ${pct(nHit, nTotal)} | ${items} | ${avg(rs.map((r) => r.rejectedCount))} | ${m((x) => x.submitAttempts)} (${m((x) => x.schemaFailures)}/${m((x) => x.checkFailures)}) | ${m((x) => x.nudges)} | ${m((x) => x.inputTokens)}/${m((x) => x.outputTokens)}/${m((x) => x.reasoningTokens)} |`,
     );
   }
-  out.push("", "_數值為各次執行的平均；召回率、矛盾偵測與雜訊為所有執行合計。雜訊是 `unexpected` 標籤的命中率，越低越好。_", "");
-
-  out.push(...renderResolution(results));
+  out.push(
+    "",
+    "_數值為各次執行的平均；召回率、矛盾偵測、真問題提出與雜訊為所有執行合計。真問題是 `mustBeRaised` 標籤被提出的比例；多餘問題是命中 `shouldNotBeRaised` 的問題總數；雜訊是 `unexpected` 標籤的命中率。後兩者越低越好。_",
+    "",
+  );
 
   out.push("## 明細", "");
   for (const r of results) {
@@ -164,47 +166,12 @@ export function renderReport(results: RunResult[]): string {
     const s = r.score;
     if (s.recall.missing.length) out.push(`- 未擷取：${s.recall.missing.join(", ")}`);
     if (s.contradictions.missing.length) out.push(`- 未偵測的矛盾：${s.contradictions.missing.join(", ")}`);
-    if (s.resolution.realOpen.neverRaised.length) out.push(`- 未提出的真問題：${s.resolution.realOpen.neverRaised.join(", ")}`);
+    if (s.questions.neverRaised.length) out.push(`- 未提出的真問題：${s.questions.neverRaised.join(", ")}`);
+    for (const u of s.questions.unwanted) out.push(`- 多餘問題 [${u.label}] ${u.questions.map((q) => `${q.id}「${q.question}」`).join("、")}`);
     for (const n of s.noise.hits) out.push(`- 雜訊 [${n.label}] ${n.itemIds.join(", ")}`);
-    for (const h of s.resolution.harmful) out.push(`- ⚠ 誤刪真問題 [${h.label}] ${h.id}「${h.question}」`);
-    for (const b of s.resolution.beneficial) out.push(`- ✓ 正確移除 [${b.label}] ${b.id}「${b.question}」`);
-    for (const u of s.resolution.unlabeled) out.push(`- ? 待人工判斷 ${u.id}「${u.question}」（由 ${u.answeredByIds.join(", ")}：${u.reason}）`);
-    for (const m of s.resolution.missed) out.push(`- ✗ 漏解 [${m.label}] ${m.questions.map((q) => `${q.id}「${q.question}」`).join("、")}`);
     out.push("");
   }
   const hashes = results.find((r) => Object.keys(r.promptHashes).length)?.promptHashes;
   if (hashes) out.push("## Prompt 版本", "", "```json", JSON.stringify(hashes, null, 2), "```", "");
   return `${out.join("\n")}\n`;
-}
-
-function renderResolution(results: RunResult[]): string[] {
-  const scored = results.filter((r) => r.score).map((r) => r.score!.resolution);
-  const sum = (f: (s: (typeof scored)[number]) => number) => scored.reduce((n, s) => n + f(s), 0);
-  const beneficial = sum((s) => s.beneficial.length);
-  const harmful = sum((s) => s.harmful.length);
-  const unlabeled = sum((s) => s.unlabeled.length);
-  const missed = sum((s) => s.missed.length);
-  const notRaised = sum((s) => s.notRaised.length);
-  const kept = sum((s) => s.realOpen.kept.length);
-  const lost = sum((s) => s.realOpen.wronglyResolved.length);
-  const neverRaised = sum((s) => s.realOpen.neverRaised.length);
-
-  return [
-    "## resolvedQuestions 評估",
-    "",
-    "以同一次 LLM 輸出比較「套用」與「不套用」resolvedQuestions（不套用時，被移除的問題會留在 Brief 中）。",
-    "",
-    "| 指標 | 次數 | 意義 |",
-    "|---|---|---|",
-    `| 正確移除 | ${beneficial} | 文件其實有答案的問題被移除：少一條誤報（效益） |`,
-    `| 誤刪真問題 | ${harmful} | 文件確實沒答案的問題被移除：Clarify 會漏問（傷害） |`,
-    `| 待人工判斷 | ${unlabeled} | 被移除但未標註的問題，見明細 |`,
-    `| 漏解 | ${missed} | 文件有答案、問題被提出卻未移除：機制可再改進 |`,
-    `| 未被提出 | ${notRaised} | 文件有答案且根本沒被提出：batch 資訊已足以抑制 |`,
-    "",
-    `真問題（mustRemainOpen）：保留 ${kept}、誤刪 ${lost}、從未被提出 ${neverRaised}。`,
-    "",
-    "判讀參考：誤刪為 0 且正確移除 > 0 → 機制有益；正確移除與漏解都接近 0 而「未被提出」居多 → batch 資訊已足夠，機制可移除；出現誤刪 → 先檢視明細，再決定調整 prompt 或移除。",
-    "",
-  ];
 }

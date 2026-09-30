@@ -2,51 +2,45 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import type { AnalysisLog } from "../src/extract/apply-analysis.ts";
 import { emptyFacts } from "../src/extract/merge.ts";
 import type { OpenQuestion, RequirementBrief } from "../src/extract/schema.ts";
 import { parseConfig } from "../src/config.ts";
 import { loadExpected, type Expected } from "../src/eval/expected.ts";
 import { renderReport, runEval } from "../src/eval/run-eval.ts";
-import { scoreCase, scoreResolution } from "../src/eval/score.ts";
+import { scoreCase, scoreQuestions } from "../src/eval/score.ts";
 import { actor, ev, rule } from "./helpers/facts.ts";
 import { ScriptedBackend } from "./helpers/scripted-backend.ts";
 
 const EVAL_CASES = join(import.meta.dirname, "..", "eval", "cases");
 
 const q = (id: string, question: string): OpenQuestion => ({ id, question, reason: "r", relatedIds: [], severity: "medium", evidence: [] });
-const resolvedLog = (...questions: OpenQuestion[]): AnalysisLog => ({
-  merged: [],
-  resolved: questions.map((question) => ({ questionId: question.id, answeredByIds: ["TERM-1"], reason: "defined", question })),
-});
 
 const labels: Expected = {
   expect: [],
   openQuestions: {
-    mustRemainOpen: [
+    mustBeRaised: [
       { id: "vip", any: ["VIP"] },
       { id: "fee", any: ["運費"] },
     ],
-    shouldBeResolved: [
-      { id: "appraisal", any: ["鑑賞期"] },
+    shouldNotBeRaised: [
+      { id: "appraisal", any: ["鑑賞期是幾天"] },
       { id: "member", any: ["會員是"] },
-      { id: "sku", any: ["SKU"] },
+      { id: "sku", any: ["SKU 的定義"] },
     ],
   },
 };
 
-describe("scoreResolution", () => {
-  test("classifies every resolution against the labels, counterfactually", () => {
-    const open = [q("OQ-2", "VIP 會員是什麼？"), q("OQ-3", "SKU 的定義？")];
-    const log = resolvedLog(q("OQ-1", "鑑賞期是幾天？"), q("OQ-4", "退貨運費誰付？"), q("OQ-5", "折扣怎麼算？"));
-    const score = scoreResolution(labels, open, log);
-    expect(score.beneficial.map((b) => b.label)).toEqual(["appraisal"]);
-    expect(score.harmful.map((h) => h.label)).toEqual(["fee"]);
-    expect(score.unlabeled.map((u) => u.id)).toEqual(["OQ-5"]);
-    expect(score.missed.map((m) => m.label)).toEqual(["sku"]);
-    // "VIP 會員是什麼？" matches the member label too, but a mustRemainOpen match takes precedence.
-    expect(score.notRaised).toEqual(["member"]);
-    expect(score.realOpen).toEqual({ kept: ["vip"], wronglyResolved: ["fee"], neverRaised: [] });
+describe("scoreQuestions", () => {
+  test("real questions raised or not, and questions the documents already answer", () => {
+    const open = [q("OQ-1", "VIP 會員是什麼？"), q("OQ-2", "SKU 的定義？"), q("OQ-3", "鑑賞期是幾天？"), q("OQ-4", "折扣怎麼算？")];
+    const score = scoreQuestions(labels, open);
+    expect(score.raised).toEqual(["vip"]);
+    expect(score.neverRaised).toEqual(["fee"]);
+    // "VIP 會員是什麼？" also matches the member label, but a real question is never counted as unwanted.
+    expect(score.unwanted).toEqual([
+      { label: "appraisal", questions: [{ id: "OQ-3", question: "鑑賞期是幾天？" }] },
+      { label: "sku", questions: [{ id: "OQ-2", question: "SKU 的定義？" }] },
+    ]);
   });
 });
 
@@ -73,7 +67,6 @@ describe("scoreCase", () => {
         ],
       },
       brief,
-      { merged: [], resolved: [] },
     );
     expect(score.recall).toEqual({ found: ["member", "3d"], missing: ["cs"] });
     expect(score.contradictions).toEqual({ found: ["window"], missing: ["other"] });
@@ -99,7 +92,6 @@ describe("scoreCase", () => {
         ],
       },
       brief,
-      { merged: [], resolved: [] },
     );
     // Evidence is not item text, so "vendor" in a quote does not count.
     expect(score.noise).toEqual({ hits: [{ label: "dealer", itemIds: ["ACT-1"] }], labels: 3 });
@@ -123,7 +115,7 @@ describe("runEval", () => {
       features: [{ id: "FEAT-1", name: "取消訂單", description: "取消", actorIds: ["ACT-1"], inputs: [], outputs: [], dependsOn: [], evidence: [ev("prd.md", 9, "會員可於下單後 3 天內取消訂單。")] }],
       openQuestions: [{ id: "OQ-1", question: "退貨運費誰負擔？", reason: "待確認", relatedIds: [], severity: "high", evidence: [ev("prd.md", 16, "退貨運費由誰負擔待確認。")] }],
     };
-    const analysis = { merges: [], resolvedQuestions: [{ questionId: "OQ-1", answeredByIds: ["ACT-1"], reason: "wrong on purpose" }], contradictions: [], openQuestions: [], assumptions: [] };
+    const analysis = { merges: [], contradictions: [], openQuestions: [], assumptions: [] };
     const backend = new ScriptedBackend((o) => (o.tool.name === "submit_facts" ? [{ call: { ...emptySections(), ...facts } }] : [{ call: analysis }]));
     const outDir = mkdtempSync(join(tmpdir(), "xplan-eval-"));
 
@@ -137,12 +129,11 @@ describe("runEval", () => {
     });
 
     expect(results[0]!.status).toBe("succeeded");
-    expect(results[0]!.score!.resolution.harmful.map((h) => h.label)).toEqual(["return-shipping-fee"]);
+    expect(results[0]!.score!.questions).toEqual({ raised: ["return-shipping-fee"], neverRaised: ["shipped-order", "appraisal-period"], unwanted: [] });
     expect(results[0]!.promptHashes["extract/facts.system"]).toMatch(/^[0-9a-f]{12}$/);
     const report = renderReport(results);
-    expect(report).toContain("| 誤刪真問題 | 1 |");
-    expect(report).toContain("⚠ 誤刪真問題 [return-shipping-fee]");
-    expect(readFileSync(join(results[0]!.runDir, "01-analysis-log.json"), "utf8")).toContain("退貨運費誰負擔？");
+    expect(report).toContain("| 33% | 0 |");
+    expect(report).toContain("- 未提出的真問題：shipped-order, appraisal-period");
   });
 });
 

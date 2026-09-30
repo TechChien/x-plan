@@ -55,10 +55,9 @@ export function renderBriefMarkdown(brief: RequirementBrief, rejected: RejectedI
     out.push("");
   }
 
-  if (log.merged.length || log.resolved.length) {
+  if (log.merged.length) {
     out.push("## 分析紀錄", "");
     for (const m of log.merged) out.push(`- 合併 ${m.dropIds.join(", ")} → **${m.keepId}**：${m.reason}`);
-    for (const r of log.resolved) out.push(`- 已解答並移除 ${r.questionId}「${r.question.question}」（由 ${r.answeredByIds.join(", ")}）：${r.reason}`);
     out.push("");
   }
 

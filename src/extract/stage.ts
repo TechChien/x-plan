@@ -239,7 +239,7 @@ export async function runExtract(opts: ExtractOptions): Promise<ExtractReport> {
       maxNudges: MAX_NUDGES,
       tool: {
         name: "submit_analysis",
-        description: "Submit merges, resolved questions, contradictions, new open questions and assumptions. Call exactly once.",
+        description: "Submit merges, contradictions, new open questions and assumptions. Call exactly once.",
         parameters: AnalysisSubmissionSchema,
         check: (params: AnalysisSubmission, { isLast }) => {
           const { issues } = checkAnalysis(merged.facts, params);

@@ -1,5 +1,5 @@
 import { ITEM_SECTIONS, redirectRefs, uniqueEvidence } from "./merge.ts";
-import type { AnalysisSubmission, Evidence, Facts, OpenQuestion, RequirementBrief, TraceabilityEntry } from "./schema.ts";
+import type { AnalysisSubmission, Evidence, Facts, RequirementBrief, TraceabilityEntry } from "./schema.ts";
 import { itemsOf, type ItemSection } from "./validate.ts";
 
 type Item = { id: string; evidence?: Evidence[] } & Record<string, unknown>;
@@ -10,10 +10,12 @@ export interface OpIssue {
   errors: string[];
 }
 
-/** What Analysis removed from the Brief, with the full removed items, so people and evals can judge each decision. */
+/**
+ * What Analysis removed from the Brief, with the full removed items, so people and evals can judge each decision.
+ * Merges are the only removal: Analysis never answers open questions itself (ADR 0003).
+ */
 export interface AnalysisLog {
   merged: { keepId: string; dropIds: string[]; reason: string; dropped: unknown[] }[];
-  resolved: { questionId: string; answeredByIds: string[]; reason: string; question: OpenQuestion }[];
 }
 
 interface Lookup {
@@ -64,14 +66,6 @@ export function checkAnalysis(facts: Facts, ops: AnalysisSubmission): { issues: 
     if (!errors.length) for (const id of m.dropIds) redirect.set(id, m.keepId);
   });
 
-  ops.resolvedQuestions.forEach((r, i) => {
-    const errors = missing([r.questionId, ...r.answeredByIds]);
-    if (sectionOf.has(r.questionId) && sectionOf.get(r.questionId) !== "openQuestions") errors.push(`questionId "${r.questionId}" is not an open question`);
-    if (redirect.has(r.questionId) || keepIds.has(r.questionId)) errors.push(`"${r.questionId}" is both merged and resolved; choose one`);
-    for (const id of r.answeredByIds) if (sectionOf.get(id) === "openQuestions") errors.push(`"${id}" is an open question and cannot answer one`);
-    add(`resolvedQuestions[${i}]`, errors);
-  });
-
   ops.contradictions.forEach((c, i) => {
     const errors = missing(c.relatedIds);
     for (const id of c.relatedIds) if (sectionOf.get(id) === "openQuestions") errors.push(`"${id}" is an open question; contradictions relate facts`);
@@ -106,17 +100,14 @@ export function applyAnalysis(facts: Facts, ops: AnalysisSubmission): { brief: R
     const keep = nextItems.get(m.keepId) as Item;
     if (keep.evidence) keep.evidence = uniqueEvidence([...keep.evidence, ...m.dropIds.flatMap((id) => items.get(id)?.evidence ?? [])]);
   }
-  // 2. Resolved questions are removed.
-  const resolved = ops.resolvedQuestions.filter(ok("resolvedQuestions"));
-  const removed = new Set([...redirect.keys(), ...resolved.map((r) => r.questionId)]);
   for (const section of ITEM_SECTIONS) {
-    (next as Record<string, unknown>)[section] = itemsOf(next, section).filter((item) => !removed.has(item.id));
+    (next as Record<string, unknown>)[section] = itemsOf(next, section).filter((item) => !redirect.has(item.id));
   }
   const redirected = redirectRefs(next, redirect);
   const to = (id: string) => redirect.get(id) ?? id;
   const dedupe = (ids: string[]) => [...new Set(ids.map(to))];
 
-  // 3. New items get ids after the existing ones.
+  // 2. New items get ids after the existing ones.
   const nextNumber = (prefix: string, existing: { id: string }[]) =>
     Math.max(0, ...existing.map((x) => Number(x.id.slice(prefix.length + 1)) || 0)) + 1;
 
@@ -142,10 +133,7 @@ export function applyAnalysis(facts: Facts, ops: AnalysisSubmission): { brief: R
   return {
     brief: { ...briefWithoutTrace, traceability: buildTraceability(briefWithoutTrace) },
     rejectedOps: issues,
-    log: {
-      merged: merges.map((m) => ({ ...m, dropped: m.dropIds.map((id) => items.get(id)) })),
-      resolved: resolved.map((r) => ({ ...r, question: items.get(r.questionId) as unknown as OpenQuestion })),
-    },
+    log: { merged: merges.map((m) => ({ ...m, dropped: m.dropIds.map((id) => items.get(id)) })) },
   };
 }
 
