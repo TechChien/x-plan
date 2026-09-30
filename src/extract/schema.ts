@@ -3,8 +3,8 @@ import { Type, type Static, type TSchema } from "typebox";
 const Str = (description: string) => Type.String({ description });
 const StrList = (description: string) => Type.Array(Type.String(), { description });
 const Id = (prefix: string) => Type.String({ description: `Unique id, format ${prefix}-<n>, e.g. ${prefix}-1` });
-const Severity = Type.Union([Type.Literal("blocking"), Type.Literal("high"), Type.Literal("medium"), Type.Literal("low")]);
-const Confidence = Type.Union([Type.Literal("high"), Type.Literal("medium"), Type.Literal("low")]);
+export const Severity = Type.Union([Type.Literal("blocking"), Type.Literal("high"), Type.Literal("medium"), Type.Literal("low")]);
+export const Confidence = Type.Union([Type.Literal("high"), Type.Literal("medium"), Type.Literal("low")]);
 
 export const EvidenceSchema = Type.Object({
   file: Str("Document path exactly as given in <document path>"),
