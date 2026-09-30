@@ -81,7 +81,7 @@ describe("recordAnswers", () => {
       ["NOTE-1", "NOTE", "user", "answered", "OQ-1", "VIP 是 10 天"],
       ["NOTE-2", "NOTE", "user", "answered", undefined, "補充"],
     ]);
-    expect(state.answers.map((a) => a.ref)).toEqual(["R1/NOTE-1", "R1/NOTE-2"]);
+    expect(state.answers.map((a) => [a.ref, a.target])).toEqual([["R1/NOTE-1", "OQ-1"], ["R1/NOTE-2", undefined]]);
   });
 
   test("rejects responses to items that were not asked, and notes aimed at unknown ids", () => {

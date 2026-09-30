@@ -70,7 +70,7 @@ export function recordAnswers(current: ClarifyState, inputs: UserInput[], meta: 
   const round = state.rounds.at(-1)?.n;
   if (round === undefined) throw new Error("No round has been asked yet");
   const answer = (it: AgendaItem, kind: ResponseKind, text: string) =>
-    state.answers.push({ ref: `R${round}/${it.id}`, itemId: it.id, round, kind, text, ...meta });
+    state.answers.push({ ref: `R${round}/${it.id}`, itemId: it.id, round, kind, text, ...(it.target ? { target: it.target } : {}), ...meta });
 
   for (const input of inputs) {
     const error = inputError(state, input);

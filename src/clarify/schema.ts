@@ -104,6 +104,8 @@ export interface Answer {
   kind: ResponseKind;
   /** The user's words verbatim; for `accept`, the recommendation as it was shown. */
   text: string;
+  /** Notes only: the Agenda Item or Decision the note refers to. */
+  target?: string;
   via: string;
   at: string;
 }

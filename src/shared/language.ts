@@ -29,7 +29,10 @@ const SIMPLIFIED_ONLY = new Set([...PAIRS].filter((_, i) => i % 2 === 0));
 const TRADITIONAL_ONLY = new Set([...PAIRS].filter((_, i) => i % 2 === 1));
 
 /** Free-text fields: long English prose there means the item was not written in Chinese. */
-const PROSE_FIELDS = new Set(["description", "question", "reason", "rule", "requirement", "constraint", "assumption", "rationale", "conflict", "item", "definition"]);
+const PROSE_FIELDS = new Set([
+  "description", "question", "reason", "rule", "requirement", "constraint", "assumption", "rationale", "conflict", "item", "definition",
+  "conclusion", "recommendation",
+]);
 const MIN_PROSE_WORDS = 8;
 
 /** Kept exactly as the documents write them, whatever the output language. */
