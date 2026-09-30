@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
@@ -15,11 +15,21 @@ import { ScriptedBackend, type ScriptedTurn } from "./helpers/scripted-backend.t
 
 const config = parseConfig({ provider: { baseUrl: "http://unused" } });
 
-function runDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), "x-plan-clarify-"));
-  writeFileSync(join(dir, "01-brief.json"), `${JSON.stringify(returnsBrief(), null, 2)}\n`);
-  writeFileSync(join(dir, "run.json"), JSON.stringify({ stage: "extract", outputLanguage: "zh" }));
-  return dir;
+interface Dirs {
+  root: string;
+  /** The Extract Run the Clarify Run starts from. */
+  extract: string;
+  clarify: string;
+}
+
+/** An Extract Run holding the returns Brief, and where a Clarify Run from it goes. */
+function runDir(status = "succeeded"): Dirs {
+  const root = mkdtempSync(join(tmpdir(), "x-plan-clarify-"));
+  const extract = join(root, "extract-20260930-1500-aaaaaa");
+  mkdirSync(extract);
+  writeFileSync(join(extract, "01-brief.json"), `${JSON.stringify(returnsBrief(), null, 2)}\n`);
+  writeFileSync(join(extract, "run.json"), JSON.stringify({ stage: "extract", status, createdAt: "2026-09-30T15:00:00Z", outputLanguage: "zh" }));
+  return { root, extract, clarify: join(root, "clarify-20260930-1600-bbbbbb") };
 }
 
 const op = (answerRef: string, resolves: string[], conclusion: string, extra: Partial<DecisionOp> = {}): DecisionOp => ({
@@ -47,8 +57,17 @@ function backend(scripts: ScriptedTurn[][]): ScriptedBackend & { tools: string[]
   return b;
 }
 
-function options(dir: string, b: AgentBackend, answer: (q: AskedQuestion, round: number) => string | string[], extra: Partial<ClarifyOptions> = {}): ClarifyOptions {
-  return { runDir: dir, config, answerer: new ScriptAnswerer(answer), backend: async () => b, log: () => {}, now: () => new Date("2026-09-30T00:00:00Z"), ...extra };
+function options(dirs: Dirs, b: AgentBackend, answer: (q: AskedQuestion, round: number) => string | string[], extra: Partial<ClarifyOptions> = {}): ClarifyOptions {
+  return {
+    runDir: dirs.clarify,
+    sourceRunDir: dirs.extract,
+    config,
+    answerer: new ScriptAnswerer(answer),
+    backend: async () => b,
+    log: () => {},
+    now: () => new Date("2026-09-30T00:00:00Z"),
+    ...extra,
+  };
 }
 
 const readJson = <T>(path: string): T => JSON.parse(readFileSync(path, "utf8")) as T;
@@ -76,13 +95,14 @@ const happyAnswers = (q: AskedQuestion): string =>
 describe("runClarify", () => {
   test("runs rounds until nothing is open and writes the Aligned Brief, transcript, traces and prompts", async () => {
     const dir = runDir();
+    const out = dir.clarify;
     const b = backend(happyScripts());
     const report = await runClarify(options(dir, b, happyAnswers));
 
     expect(report).toMatchObject({ status: "succeeded", termination: "converged", failures: [] });
     expect(b.tools).toEqual(["submit_round", "submit_round", "submit_round"]);
 
-    const aligned = readJson<AlignedBrief>(join(dir, "02-aligned.json"));
+    const aligned = readJson<AlignedBrief>(join(out, "02-aligned.json"));
     expect(aligned.brief).toEqual(returnsBrief());
     expect(aligned.supersededBy).toEqual({ "BR-1": ["DEC-1"] });
     expect(aligned.confirmedBy).toEqual({ "ASM-2": ["DEC-5"], "ASM-1": ["DEC-6"] });
@@ -97,21 +117,26 @@ describe("runClarify", () => {
     });
     expect(aligned.decisions.find((d) => d.id === "DEC-3")).toMatchObject({ answerText: "建議 OQ-2", effect: "new" });
 
-    for (const f of ["02-state.json", "02-transcript.md", "02-aligned.md", "02-rejected.json", "02-run.json"]) expect(existsSync(join(dir, f))).toBe(true);
+    for (const f of ["02-state.json", "02-transcript.md", "02-aligned.md", "02-rejected.json", "run.json"]) expect(existsSync(join(out, f))).toBe(true);
     for (const n of [1, 2, 3]) {
-      expect(existsSync(join(dir, "traces", `clarify-r${n}.md`))).toBe(true);
-      expect(existsSync(join(dir, "prompts", `clarify-r${n}.user.md`))).toBe(true);
+      expect(existsSync(join(out, "traces", `clarify-r${n}.md`))).toBe(true);
+      expect(existsSync(join(out, "prompts", `clarify-r${n}.user.md`))).toBe(true);
     }
-    const run = readJson<{ termination: string; agents: { label: string; cacheReadRatio: number }[] }>(join(dir, "02-run.json"));
-    expect(run.termination).toBe("converged");
+    const run = readJson<{ stage: string; source: unknown; termination: string; agents: { label: string; cacheReadRatio: number }[] }>(join(out, "run.json"));
+    expect(run).toMatchObject({ stage: "clarify", termination: "converged" });
+    const source = { stage: "extract", runId: "extract-20260930-1500-aaaaaa", sha256: expect.stringMatching(/^[0-9a-f]{64}$/) };
+    expect(run.source).toEqual({ kind: "run", runDir: dir.extract, file: "01-brief.json", ...source });
+    expect(aligned.source).toEqual(source);
+    expect(existsSync(join(dir.extract, "02-state.json"))).toBe(false); // the Extract Run is only read
     expect(run.agents.map((a) => a.label)).toEqual(["clarify-r1", "clarify-r2", "clarify-r3"]);
 
-    const state = readJson<ClarifyState>(join(dir, "02-state.json"));
+    const state = readJson<ClarifyState>(join(out, "02-state.json"));
     expect(replay(returnsBrief(), state)).toEqual(state);
   });
 
   test("an interrupted session resumes where it stopped, keeping Answers already given", async () => {
     const dir = runDir();
+    const out = dir.clarify;
     const scripts = happyScripts();
     let answered = 0;
     const flaky = (q: AskedQuestion) => {
@@ -120,7 +145,7 @@ describe("runClarify", () => {
     };
     const first = await runClarify(options(dir, backend(scripts), flaky));
     expect(first).toMatchObject({ status: "failed", failures: ["terminal closed"] });
-    const saved = readJson<ClarifyState>(join(dir, "02-state.json"));
+    const saved = readJson<ClarifyState>(join(out, "02-state.json"));
     expect(saved.answers.map((a) => a.ref)).toEqual(["R1/CTR-1", "R1/OQ-1"]);
 
     const shown: string[] = [];
@@ -133,17 +158,19 @@ describe("runClarify", () => {
 
   test("refuses to resume when the Brief changed", async () => {
     const dir = runDir();
+    const out = dir.clarify;
     await runClarify(options(dir, backend([[round([], ["CTR-1"])]]), () => {
       throw new Error("stop");
     }));
-    writeFileSync(join(dir, "01-brief.json"), JSON.stringify({ ...returnsBrief(), assumptions: [] }));
-    await expect(runClarify(options(dir, backend([]), happyAnswers))).rejects.toThrow(/--restart/);
+    writeFileSync(join(dir.extract, "01-brief.json"), JSON.stringify({ ...returnsBrief(), assumptions: [] }));
+    await expect(runClarify(options(dir, backend([]), happyAnswers))).rejects.toThrow(/Brief of Extract Run extract-20260930-1500-aaaaaa changed.*--restart/);
     const restarted = await runClarify(options(dir, backend([[round([], ["CTR-1", "OQ-1", "OQ-2", "OQ-3", "OQ-4"])]]), () => "/done", { restart: true }));
     expect(restarted.status).toBe("succeeded");
   });
 
   test("/done runs a closing round that only interprets, and leaves the rest unresolved", async () => {
     const dir = runDir();
+    const out = dir.clarify;
     const b = backend([
       [round([], ["CTR-1", "OQ-1", "OQ-2", "OQ-3", "OQ-4"])],
       [{ call: { decisions: [op("R1/CTR-1", ["CTR-1"], "以 7 天為準", { supersedes: ["BR-1"] })] } }],
@@ -151,14 +178,15 @@ describe("runClarify", () => {
     const report = await runClarify(options(dir, b, (q) => (q.id === "CTR-1" ? "以 7 天為準" : "/done")));
     expect(report).toMatchObject({ status: "succeeded", termination: "done" });
     expect(b.tools).toEqual(["submit_round", "submit_final"]);
-    const state = readJson<ClarifyState>(join(dir, "02-state.json"));
+    const state = readJson<ClarifyState>(join(out, "02-state.json"));
     expect(item(state, "CTR-1").status).toBe("decided");
     expect(["OQ-1", "OQ-2", "ASM-1"].map((id) => item(state, id).status)).toEqual(["unresolved", "unresolved", "unresolved"]);
-    expect(existsSync(join(dir, "traces", "clarify-final.md"))).toBe(true);
+    expect(existsSync(join(out, "traces", "clarify-final.md"))).toBe(true);
   });
 
   test("stops at the round cap with a closing round and a warning", async () => {
     const dir = runDir();
+    const out = dir.clarify;
     const b = backend([[round([], ["CTR-1", "OQ-1", "OQ-2", "OQ-3", "OQ-4"])], [{ call: { decisions: [op("R1/OQ-2", ["OQ-2"], "賣家負擔")] } }]]);
     const report = await runClarify(options(dir, b, (q) => (q.id === "OQ-2" ? "/ok" : "/later"), { maxRounds: 1 }));
     expect(report).toMatchObject({ status: "succeeded", termination: "cap" });
@@ -168,6 +196,7 @@ describe("runClarify", () => {
 
   test("an Answer whose Decision is rejected on the last attempt is interpreted again next round", async () => {
     const dir = runDir();
+    const out = dir.clarify;
     const bad = op("R1/OQ-2", ["OQ-2"], "賣家負擔", { relatedIds: ["FEAT-9"] });
     const b = backend([
       [round([], ["CTR-1", "OQ-1", "OQ-2", "OQ-3", "OQ-4"])],
@@ -178,13 +207,46 @@ describe("runClarify", () => {
     const report = await runClarify(options(dir, b, answers));
     expect(report).toMatchObject({ status: "succeeded", termination: "converged" });
     expect(report.warnings).toContainEqual(expect.stringMatching(/clarify-r2: 1 item\(s\) rejected/));
-    expect(readJson<unknown[]>(join(dir, "02-rejected.json"))).toHaveLength(1);
-    expect(readFileSync(join(dir, "prompts", "clarify-r3.user.md"), "utf8")).toContain("ref: R1/OQ-2");
-    expect(item(readJson<ClarifyState>(join(dir, "02-state.json")), "OQ-2")).toMatchObject({ status: "decided", resolvedBy: ["DEC-2"] });
+    expect(readJson<unknown[]>(join(out, "02-rejected.json"))).toHaveLength(1);
+    expect(readFileSync(join(out, "prompts", "clarify-r3.user.md"), "utf8")).toContain("ref: R1/OQ-2");
+    expect(item(readJson<ClarifyState>(join(out, "02-state.json")), "OQ-2")).toMatchObject({ status: "decided", resolvedBy: ["DEC-2"] });
+  });
+
+  test("several Clarify Runs can start from the same Extract Run without touching each other", async () => {
+    const dir = runDir();
+    const a = await runClarify(options(dir, backend(happyScripts()), happyAnswers));
+    const b = await runClarify(options({ ...dir, clarify: join(dir.root, "clarify-b") }, backend([[round([], ["CTR-1", "OQ-1", "OQ-2", "OQ-3", "OQ-4"])]]), () => "/done"));
+    expect([a.termination, b.termination]).toEqual(["converged", "done"]);
+    expect(readJson<AlignedBrief>(join(dir.clarify, "02-aligned.json")).decisions).toHaveLength(6);
+    expect(readJson<AlignedBrief>(join(dir.root, "clarify-b", "02-aligned.json")).decisions).toHaveLength(0);
+  });
+
+  test("resumes by the Clarify Run alone, and refuses a different Extract Run for it", async () => {
+    const dir = runDir();
+    await runClarify(options(dir, backend(happyScripts().slice(0, 1)), () => {
+      throw new Error("stop");
+    }));
+    const resumed = await runClarify(options(dir, backend(happyScripts().slice(1)), happyAnswers, { sourceRunDir: undefined }));
+    expect(resumed.status).toBe("succeeded");
+    await expect(runClarify(options(dir, backend([]), happyAnswers, { sourceRunDir: join(dir.root, "extract-other") }))).rejects.toThrow(
+      /belongs to Extract Run extract-20260930-1500-aaaaaa/,
+    );
+  });
+
+  test("a new Clarify Run needs a succeeded Extract Run unless told otherwise", async () => {
+    const failed = runDir("failed");
+    await expect(runClarify(options(failed, backend([]), happyAnswers))).rejects.toThrow(/status failed.*--allow-failed-extract/);
+    const allowed = await runClarify(options(failed, backend([[round([], ["CTR-1", "OQ-1", "OQ-2", "OQ-3", "OQ-4"])]]), () => "/done", { allowFailedExtract: true }));
+    expect(allowed.warnings).toContainEqual(expect.stringMatching(/whose status is failed/));
+
+    const dir = runDir();
+    await expect(runClarify(options(dir, backend([]), happyAnswers, { sourceRunDir: undefined }))).rejects.toThrow(/give the Extract Run to start from/);
+    await expect(runClarify(options(dir, backend([]), happyAnswers, { runDir: dir.extract }))).rejects.toThrow(/is an extract Run, not a Clarify Run/);
   });
 
   test("a round whose agent fails leaves the state as it was, so the round can be retried", async () => {
     const dir = runDir();
+    const out = dir.clarify;
     const report = await runClarify(options(dir, backend([[{ text: "I will not call the tool" }]]), happyAnswers));
     expect(report.status).toBe("failed");
     expect(report.failures[0]).toMatch(/clarify-r1 failed \(no-submit\)/);

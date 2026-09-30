@@ -92,6 +92,7 @@ export function markAsked(current: ClarifyState, ids: string[], rationale: strin
  */
 export function replay(brief: RequirementBrief, recorded: ClarifyState): ClarifyState {
   let state = createState(brief, recorded.briefSha256, recorded.outputLanguage);
+  if (recorded.source) state.source = structuredClone(recorded.source);
   for (const round of recorded.rounds) {
     state = applyRound(state, { n: round.n, final: round.final, prepare: round.prepare, accepted: round.accepted, ordering: round.ordering.prepare });
     if (round.final) continue;

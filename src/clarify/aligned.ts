@@ -28,6 +28,8 @@ export interface AlignedAgendaItem {
 
 /** Clarify's output and Write's only input (ADR 0008): the Brief unchanged, plus what the user decided. */
 export interface AlignedBrief {
+  /** The Extract Run and Brief this was aligned from (ADR 0010). */
+  source?: ClarifyState["source"];
   outputLanguage: OutputLanguage;
   termination?: Termination;
   brief: RequirementBrief;
@@ -43,6 +45,7 @@ export interface AlignedBrief {
 export function buildAligned(brief: RequirementBrief, state: ClarifyState): AlignedBrief {
   const active = state.decisions.filter((d) => d.status === "active");
   return {
+    ...(state.source ? { source: structuredClone(state.source) } : {}),
     outputLanguage: state.outputLanguage,
     ...(state.termination ? { termination: state.termination } : {}),
     brief: structuredClone(brief),

@@ -169,7 +169,7 @@ Write 會把 deferred 的題目標成 `@deferred`，把 unresolved 的題目標�
 
 ## 3. Trace 建置
 
-產出寫在 Extract 用的同一個 run 目錄。
+產出寫在 Clarify 自己的 Run 目錄；Extract Run 只讀不寫（[ADR 0010](../adr/0010-stage-runs-form-a-tree.md)，取代原本「寫進 Extract 的 run 目錄」的設計）。
 
 | 檔案 | 內容 |
 |---|---|
@@ -179,7 +179,7 @@ Write 會把 deferred 的題目標成 `@deferred`，把 unresolved 的題目標�
 | `02-transcript.md` | 給人閱讀的完整對話，由 state 產生（純函式） |
 | `02-aligned.json` / `02-aligned.md` | 交給 Write 的正式契約，以及給人閱讀的版本 |
 | `02-rejected.json` | 被拒的 decision |
-| `02-run.json` | model、thinking、prompt hash、每 Round 的 metrics 和 `cacheRead / input` 比例、結束原因、warnings |
+| `run.json` | `source`（上游 Extract Run 的 id、目錄、Brief 的 sha256）、model、thinking、prompt hash、每 Round 的 metrics 和 `cacheRead / input` 比例、結束原因、warnings |
 
 ## 4. 檔案結構
 
@@ -205,7 +205,7 @@ eval/cases/<name>/clarify/   brief.json（fixture）、answers.yaml
 CLI 用法：
 
 ```
-x-plan clarify <runDir> [--restart] [--lang <code>] [--max-rounds 8] [--batch-size 5] [--config <path>]
+x-plan clarify <extract-run | clarify-run> [--out <dir>] [--restart] [--allow-failed-extract] [--lang <code>] [--max-rounds 8] [--batch-size 5] [--config <path>]
 ```
 
 常數：`BATCH_SIZE=5`、`MAX_ROUNDS=8`、`MAX_GAPS_PER_ROUND=2`、`MAX_FOLLOW_UP_DEPTH=2`、`MAX_LATER=2`。交卷額度與 nudge 次數沿用 Extract 的 3 次和 2 次。thinking 使用 config 的 `stages.clarify.thinking`。輸出語言繼承自 `run.json`；用 `--lang` 覆寫時，若與 Brief 的語言不一致會寫入 warning。

@@ -5,11 +5,11 @@ x-plan 將使用者提供的需求文件轉換為 BDD（Gherkin）需求文件�
 ## 流程
 
 **Run**:
-一次 x-plan 執行，從一組 Source Document 出發，依序經過三個 Stage，每個 Stage 的產出都保存下來可供檢視與重跑。
-_Avoid_: Job, session, task
+某個 Stage 的一次執行，有自己的 id 與產出，並記錄它讀取的上游 Run（Extract 的上游是 Source Document）。同一個上游 Run 可以有多個下游 Run，例如對同一次 Extract 做兩次 Clarify。
+_Avoid_: Job, session, task, pipeline run
 
 **Stage**:
-Run 中職責單一的一個步驟，依序為 Extract、Clarify、Write；每個 Stage 只讀取前一個 Stage 的產出。
+x-plan 中職責單一的一個步驟，依序為 Extract、Clarify、Write；每個 Stage 的 Run 只讀取一個上游 Run 的產出。
 _Avoid_: Phase, step
 
 **Extract**:

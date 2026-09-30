@@ -152,6 +152,8 @@ export type Termination = "converged" | "done" | "cap";
 export interface ClarifyState {
   version: 1;
   briefSha256: string;
+  /** The Extract Run whose Brief this session clarifies (ADR 0010). */
+  source?: { stage: "extract"; runId: string; sha256: string };
   outputLanguage: OutputLanguage;
   /** Agenda Items in creation order. */
   agenda: AgendaItem[];

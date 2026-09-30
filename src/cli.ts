@@ -1,6 +1,5 @@
-import { randomBytes } from "node:crypto";
 import { existsSync, statSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { Command, Option } from "commander";
 import { PiBackend } from "./agent/pi-backend.ts";
 import { CLARIFY_LIMITS } from "./clarify/schema.ts";
@@ -8,6 +7,7 @@ import { runClarify } from "./clarify/stage.ts";
 import { TtyAnswerer } from "./clarify/tty-answerer.ts";
 import { findConfigPath, loadConfig, parseConfig, type XPlanConfig } from "./config.ts";
 import { OUTPUT_LANGUAGES, type OutputLanguage } from "./shared/language.ts";
+import { newRunId, readRunMeta, resolveRunDir, runsDir } from "./shared/runs.ts";
 import { runExtract } from "./extract/stage.ts";
 
 const program = new Command();
@@ -37,7 +37,7 @@ program
     if (!existsSync(dir) || !statSync(dir).isDirectory()) throw new Error(`Not a directory: ${dir}`);
 
     const config = resolveConfig(cwd, opts.config, Boolean(opts.dryRun));
-    const runDir = opts.out ? resolve(cwd, opts.out) : join(cwd, ".x-plan", "runs", newRunId());
+    const runDir = opts.out ? resolve(cwd, opts.out) : join(runsDir(cwd), newRunId("extract"));
     const log = (message: string) => console.error(`x-plan: ${message}`);
     log(`Run directory: ${runDir}`);
 
@@ -65,41 +65,62 @@ program
 
 program
   .command("clarify")
-  .description("Stage 2: question the user about the Requirement Brief in <runDir> until the requirements are aligned")
-  .argument("<runDir>", "Run directory written by extract (contains 01-brief.json)")
-  .option("--restart", "discard saved progress (02-state.json) and start over")
+  .description("Stage 2: question the user about a Requirement Brief until the requirements are aligned")
+  .argument("<run>", "an Extract Run to start a new Clarify Run from, or a Clarify Run to resume: an id under .x-plan/runs/ or a directory")
+  .option("--out <dir>", "directory for a new Clarify Run (default: ./.x-plan/runs/<clarify-id>)")
+  .option("--restart", "discard the Clarify Run's progress (02-state.json) and start it over")
+  .option("--allow-failed-extract", "start from an Extract Run whose status is failed")
   .addOption(
     new Option("--lang <code>", "output language: en, zh, cn. Default: the language the Brief was written in").choices(OUTPUT_LANGUAGES),
   )
   .option("--max-rounds <n>", `rounds before the session closes (default ${CLARIFY_LIMITS.maxRounds})`, positiveInt)
   .option("--batch-size <n>", `questions per round (default ${CLARIFY_LIMITS.batchSize})`, positiveInt)
   .option("--config <path>", "config file (default: ./x-plan.config.json, then ~/.x-plan/)")
-  .action(async (runDirArg: string, opts: { restart?: boolean; lang?: OutputLanguage; maxRounds?: number; batchSize?: number; config?: string }) => {
-    const cwd = process.cwd();
-    const runDir = resolve(cwd, runDirArg);
-    if (!existsSync(runDir) || !statSync(runDir).isDirectory()) throw new Error(`Not a directory: ${runDir}`);
-    const config = loadConfig(cwd, opts.config);
-    const log = (message: string) => console.error(`x-plan: ${message}`);
+  .action(
+    async (
+      runArg: string,
+      opts: { out?: string; restart?: boolean; allowFailedExtract?: boolean; lang?: OutputLanguage; maxRounds?: number; batchSize?: number; config?: string },
+    ) => {
+      const cwd = process.cwd();
+      const given = resolveRunDir(cwd, runArg);
+      const stage = readRunMeta(given)?.stage;
+      let runDir: string;
+      let sourceRunDir: string | undefined;
+      if (stage === "extract") {
+        runDir = opts.out ? resolve(cwd, opts.out) : join(runsDir(cwd), newRunId("clarify"));
+        sourceRunDir = given;
+      } else if (stage === "clarify") {
+        if (opts.out) throw new Error("--out only applies when starting a new Clarify Run from an Extract Run");
+        runDir = given;
+      } else {
+        throw new Error(`${given} is not an Extract or Clarify Run (no run.json with stage extract or clarify)`);
+      }
+      const config = loadConfig(cwd, opts.config);
+      const log = (message: string) => console.error(`x-plan: ${message}`);
+      log(`Run directory: ${runDir}`);
 
-    const report = await runClarify({
-      runDir,
-      config,
-      outputLanguage: opts.lang,
-      restart: opts.restart,
-      maxRounds: opts.maxRounds,
-      batchSize: opts.batchSize,
-      answerer: new TtyAnswerer(),
-      backend: () => PiBackend.create(config, runDir),
-      log,
-    });
+      const report = await runClarify({
+        runDir,
+        sourceRunDir,
+        allowFailedExtract: opts.allowFailedExtract,
+        config,
+        outputLanguage: opts.lang,
+        restart: opts.restart,
+        maxRounds: opts.maxRounds,
+        batchSize: opts.batchSize,
+        answerer: new TtyAnswerer(),
+        backend: () => PiBackend.create(config, runDir),
+        log,
+      });
 
-    for (const w of report.warnings) log(`warning: ${w}`);
-    for (const f of report.failures) log(`FAILED: ${f}`);
-    if (report.status === "succeeded") log(`Aligned Brief: ${join(runDir, "02-aligned.md")} (${report.termination})`);
-    else log("Progress is saved; rerun the same command to continue.");
-    log(`Status: ${report.status}`);
-    if (report.status === "failed") process.exitCode = 1;
-  });
+      for (const w of report.warnings) log(`warning: ${w}`);
+      for (const f of report.failures) log(`FAILED: ${f}`);
+      if (report.status === "succeeded") log(`Aligned Brief: ${join(runDir, "02-aligned.md")} (${report.termination})`);
+      else log(`Progress is saved; continue with: x-plan clarify ${dirname(runDir) === runsDir(cwd) ? basename(runDir) : runDir}`);
+      log(`Status: ${report.status}`);
+      if (report.status === "failed") process.exitCode = 1;
+    },
+  );
 
 function positiveInt(value: string): number {
   const n = Number(value);
@@ -113,13 +134,6 @@ function resolveConfig(cwd: string, explicit: string | undefined, dryRun: boolea
     return parseConfig({ provider: { baseUrl: "" } });
   }
   return loadConfig(cwd, explicit);
-}
-
-/** e.g. 20260929-1530-a1b2c3 */
-export function newRunId(now = new Date()): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
-  return `${stamp}-${randomBytes(3).toString("hex")}`;
 }
 
 program.parseAsync().catch((error: unknown) => {

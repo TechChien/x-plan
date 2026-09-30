@@ -56,11 +56,13 @@ export async function runClarifyEval(opts: ClarifyEvalOptions): Promise<ClarifyR
     const labels = loadClarifyCase(join(c.dir, "clarify", "answers.yaml"));
     const briefText = readFileSync(join(c.dir, "clarify", "brief.json"), "utf8");
     const brief = JSON.parse(briefText) as RequirementBrief;
+    // The fixed Brief stands in for an Extract Run; every repeat is a separate Clarify Run from it (ADR 0010).
+    const extractDir = join(opts.outDir, c.name, "extract-fixture");
+    mkdirSync(extractDir, { recursive: true });
+    writeFileSync(join(extractDir, "01-brief.json"), briefText);
+    writeFileSync(join(extractDir, "run.json"), JSON.stringify({ stage: "extract", status: "succeeded", source: { kind: "fixture" }, outputLanguage: labels.language ?? "en" }));
     for (let k = 1; k <= opts.repeat; k++) {
       const runDir = join(opts.outDir, c.name, `clarify-${k}`);
-      mkdirSync(runDir, { recursive: true });
-      writeFileSync(join(runDir, "01-brief.json"), briefText);
-      writeFileSync(join(runDir, "run.json"), JSON.stringify({ stage: "extract", outputLanguage: labels.language ?? "en" }));
       opts.log(`[eval] ${c.name} clarify run ${k}/${opts.repeat}`);
 
       const answerer = new LabelAnswerer(labels);
@@ -68,7 +70,7 @@ export async function runClarifyEval(opts: ClarifyEvalOptions): Promise<ClarifyR
       let failures: string[] = [];
       let warnings: string[] = [];
       try {
-        const report = await runClarify({ runDir, config: opts.config, answerer, backend: () => opts.backend(runDir), log: (m) => opts.log(`  ${m}`) });
+        const report = await runClarify({ runDir, sourceRunDir: extractDir, config: opts.config, answerer, backend: () => opts.backend(runDir), log: (m) => opts.log(`  ${m}`) });
         status = report.status;
         failures = report.failures;
         warnings = report.warnings;
@@ -83,7 +85,7 @@ export async function runClarifyEval(opts: ClarifyEvalOptions): Promise<ClarifyR
         const missing = labels.answers.filter((a) => !findItem(state, a.target)).map((a) => a.target);
         if (missing.length) throw new Error(`${c.name}: labels target items that are not on the Agenda: ${missing.join(", ")}`);
       }
-      const run = existsSync(join(runDir, "02-run.json")) ? (JSON.parse(readFileSync(join(runDir, "02-run.json"), "utf8")) as RunJson) : undefined;
+      const run = existsSync(join(runDir, "run.json")) ? (JSON.parse(readFileSync(join(runDir, "run.json"), "utf8")) as RunJson) : undefined;
       results.push({
         caseName: c.name,
         repeat: k,

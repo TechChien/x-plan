@@ -124,6 +124,7 @@ export async function runExtract(opts: ExtractOptions): Promise<ExtractReport> {
       status,
       createdAt: new Date().toISOString(),
       stage: "extract",
+      source: { kind: "documents", dir: opts.dir },
       inputDir: opts.dir,
       files: sources.map((s) => ({
         path: s.path,

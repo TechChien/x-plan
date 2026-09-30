@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join, resolve } from "node:path";
 import type { TaskMetrics, TaskOutcome } from "../agent/submit-task.ts";
 import type { AgentBackend } from "../agent/types.ts";
 import { thinkingFor, type XPlanConfig } from "../config.ts";
@@ -7,6 +7,7 @@ import type { RequirementBrief } from "../extract/schema.ts";
 import { PromptLibrary, sha256 } from "../prompts/template.ts";
 import { LANGUAGE_NAMES, type OutputLanguage } from "../shared/language.ts";
 import { savePrompt, writeJson, writeText, type BuiltPrompt } from "../shared/run-files.ts";
+import { readRunMeta, type RunSource } from "../shared/runs.ts";
 import { buildNudge, runTraced, validationFeedback } from "../shared/traced.ts";
 import { close, createState, inputError, item, openItems, recordAnswers, type UserInput } from "./agenda.ts";
 import { buildAligned } from "./aligned.ts";
@@ -32,8 +33,12 @@ export const MAX_SUBMIT_ATTEMPTS = 3;
 export const MAX_NUDGES = 2;
 
 export interface ClarifyOptions {
-  /** The Run directory Extract wrote `01-brief.json` to; Clarify writes its `02-*` files next to it. */
+  /** This Clarify Run's directory. One holding a clarify `run.json` is resumed; otherwise a new Run starts there. */
   runDir: string;
+  /** The Extract Run a new Clarify Run starts from (ADR 0010). When resuming, it must be the recorded one if given. */
+  sourceRunDir?: string;
+  /** Start from an Extract Run whose status is not succeeded. */
+  allowFailedExtract?: boolean;
   config: XPlanConfig;
   /** Overrides the language the Brief was written in. */
   outputLanguage?: OutputLanguage;
@@ -57,6 +62,8 @@ export interface ClarifyReport {
   termination?: Termination;
 }
 
+type UpstreamRun = Extract<RunSource, { kind: "run" }>;
+
 interface AgentRecord {
   label: string;
   status: TaskOutcome<unknown>["status"];
@@ -74,35 +81,69 @@ export async function runClarify(opts: ClarifyOptions): Promise<ClarifyReport> {
   const warnings: string[] = [];
   const failures: string[] = [];
   const statePath = join(runDir, "02-state.json");
-  const runPath = join(runDir, "02-run.json");
+  const runPath = join(runDir, "run.json");
 
-  const briefPath = join(runDir, "01-brief.json");
-  if (!existsSync(briefPath)) throw new Error(`No Requirement Brief at ${briefPath}; run x-plan extract first`);
+  // Which Extract Run this Clarify Run reads (ADR 0010).
+  const existing = readRunMeta(runDir);
+  let source: UpstreamRun;
+  let createdAt: string;
+  if (existing) {
+    if (existing.stage !== "clarify") throw new Error(`${runDir} is an ${existing.stage} Run, not a Clarify Run`);
+    if (existing.source?.kind !== "run") throw new Error(`${runPath} does not record the Extract Run it started from`);
+    source = existing.source;
+    if (opts.sourceRunDir && resolve(opts.sourceRunDir) !== resolve(source.runDir)) {
+      throw new Error(`Clarify Run ${basename(runDir)} belongs to Extract Run ${source.runId}, not ${basename(resolve(opts.sourceRunDir))}`);
+    }
+    createdAt = existing.createdAt ?? now().toISOString();
+  } else {
+    if (!opts.sourceRunDir) throw new Error(`${runDir} is not a Clarify Run; to start one, give the Extract Run to start from`);
+    const upstreamDir = resolve(opts.sourceRunDir);
+    const upstream = readRunMeta(upstreamDir);
+    if (upstream?.stage !== "extract") throw new Error(`${upstreamDir} is not an Extract Run`);
+    if (upstream.status !== "succeeded") {
+      if (!opts.allowFailedExtract) {
+        throw new Error(`Extract Run ${basename(upstreamDir)} has status ${upstream.status}, so its Brief may be incomplete; pass --allow-failed-extract to use it anyway`);
+      }
+      warnings.push(`Started from Extract Run ${basename(upstreamDir)}, whose status is ${upstream.status}`);
+    }
+    source = { kind: "run", stage: "extract", runId: basename(upstreamDir), runDir: upstreamDir, file: "01-brief.json", sha256: "" };
+    createdAt = now().toISOString();
+  }
+
+  const briefPath = join(source.runDir, source.file);
+  if (!existsSync(briefPath)) throw new Error(`No Requirement Brief at ${briefPath}`);
   const briefText = readFileSync(briefPath, "utf8");
   const brief = JSON.parse(briefText) as RequirementBrief;
   const briefSha256 = sha256(briefText);
-  const briefLanguage = readBriefLanguage(runDir);
+  const upstream = readRunMeta(source.runDir);
+  const briefLanguage = upstream?.outputLanguage;
+  if (existing && !opts.restart && source.sha256 !== briefSha256) {
+    throw new Error(
+      `The Brief of Extract Run ${source.runId} changed since Clarify Run ${basename(runDir)} started; rerun with --restart to start over from the current Brief (its progress will be discarded)`,
+    );
+  }
+  source = { ...source, sha256: briefSha256 };
 
   let state: ClarifyState;
-  if (existsSync(statePath) && !opts.restart) {
+  if (existing && existsSync(statePath) && !opts.restart) {
     state = JSON.parse(readFileSync(statePath, "utf8")) as ClarifyState;
-    if (state.briefSha256 !== briefSha256) {
-      throw new Error(`01-brief.json changed since this Clarify session started; rerun with --restart to start over (progress in 02-state.json will be discarded)`);
-    }
     if (opts.outputLanguage && opts.outputLanguage !== state.outputLanguage) {
       warnings.push(`Resuming in ${LANGUAGE_NAMES[state.outputLanguage]}, the language this session started in; --lang ${opts.outputLanguage} is ignored`);
     }
-    log(`Resuming Clarify after ${state.rounds.length} round(s)`);
+    log(`Resuming Clarify Run ${basename(runDir)} after ${state.rounds.length} round(s)`);
   } else {
     const language = opts.outputLanguage ?? briefLanguage ?? config.outputLanguage ?? "en";
     if (briefLanguage && language !== briefLanguage) {
       warnings.push(`Clarify writes in ${LANGUAGE_NAMES[language]} but the Brief was written in ${LANGUAGE_NAMES[briefLanguage]}`);
     }
-    state = createState(brief, briefSha256, language);
+    state = { ...createState(brief, briefSha256, language), source: { stage: "extract", runId: source.runId, sha256: briefSha256 } };
   }
+  log(
+    `Clarify Run ${basename(runDir)} ← Extract Run ${source.runId}${upstream?.createdAt ? ` (extracted ${upstream.createdAt})` : ""}, Brief sha ${briefSha256.slice(0, 8)}, ${state.agenda.length} Agenda Item(s)`,
+  );
 
   const lib = new PromptLibrary(config.promptsDir);
-  const agents: AgentRecord[] = existsSync(runPath) && !opts.restart ? ((JSON.parse(readFileSync(runPath, "utf8")) as { agents?: AgentRecord[] }).agents ?? []) : [];
+  const agents: AgentRecord[] = existing && !opts.restart ? ((existing as { agents?: AgentRecord[] }).agents ?? []) : [];
   const thinking = thinkingFor(config, "clarify");
   const traceDir = join(runDir, "traces");
   let backend: AgentBackend | undefined;
@@ -116,8 +157,9 @@ export async function runClarify(opts: ClarifyOptions): Promise<ClarifyReport> {
     writeJson(runPath, {
       status,
       stage: "clarify",
+      createdAt,
       updatedAt: now().toISOString(),
-      briefSha256,
+      source,
       model: config.provider.model,
       thinking,
       outputLanguage: state.outputLanguage,
@@ -190,6 +232,9 @@ export async function runClarify(opts: ClarifyOptions): Promise<ClarifyReport> {
     }
     return result;
   };
+
+  save();
+  writeRun("running");
 
   try {
     while (state.phase !== "closed") {
@@ -288,12 +333,6 @@ async function collectAnswers(start: ClarifyState, answerer: Answerer, commit: (
     },
   });
   if (state.phase === "answer") throw new Error(`The answerer stopped before answering ${state.agenda.filter((i) => i.status === "asked").map((i) => i.id).join(", ")}`);
-}
-
-function readBriefLanguage(runDir: string): OutputLanguage | undefined {
-  const path = join(runDir, "run.json");
-  if (!existsSync(path)) return undefined;
-  return (JSON.parse(readFileSync(path, "utf8")) as { outputLanguage?: OutputLanguage }).outputLanguage;
 }
 
 function countStatuses(state: ClarifyState): Record<string, number> {

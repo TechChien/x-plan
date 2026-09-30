@@ -56,7 +56,16 @@ pnpm dev extract spec/ --reference "schema/**" "api-manual.md"
 
 被標記的檔案只擷取需求文件用得到的部分（用到的資料表、欄位、端點、規則），不會自己產生 Actor 或 Feature。至少要有一份未標記的需求文件。參考資料太多、分成多批時，每一批都會附上需求文件供判斷相關性；需求文件本身超過預算的一半時無法附上，執行時會出現警告。設計理由見 [ADR 0004](docs/adr/0004-reference-documents.md)。
 
-每次執行的產出放在 `./.x-plan/runs/<run-id>/`：
+每個 Stage 的每一次執行都是一個獨立的 Run，放在 `./.x-plan/runs/<run-id>/`，id 以 Stage 開頭（例如 `extract-20260930-1530-a1b2c3`）。每個 Run 的 `run.json` 都記錄它讀取的上游：同一個 Extract Run 可以開出多個 Clarify Run，彼此互不影響（[ADR 0010](docs/adr/0010-stage-runs-form-a-tree.md)）。
+
+```
+.x-plan/runs/
+  extract-…-a1b2c3/     ← x-plan extract spec/
+  clarify-…-d4e5f6/     ← x-plan clarify extract-…-a1b2c3
+  clarify-…-0718ab/     ← x-plan clarify extract-…-a1b2c3（同一個 Extract，另一次 Clarify）
+```
+
+Extract Run 的產出：
 
 | 檔案 | 內容 |
 |---|---|
@@ -70,11 +79,14 @@ pnpm dev extract spec/ --reference "schema/**" "api-manual.md"
 
 ### Clarify：拷問到需求對齊
 
-Extract 完成後，對同一個 run 目錄執行 Clarify：
+指定要從哪一個 Extract Run 開始，Clarify 會開一個新的 Clarify Run；指定 Clarify Run 則是續跑它。參數可以是 run id（到 `.x-plan/runs/` 找）或目錄：
 
 ```sh
-pnpm dev clarify .x-plan/runs/<run-id>
+pnpm dev clarify extract-20260930-1530-a1b2c3   # 從這個 Extract Run 開一個新的 Clarify Run
+pnpm dev clarify clarify-20260930-1600-d4e5f6   # 續跑這個 Clarify Run
 ```
+
+Clarify 只讀取上游的 `01-brief.json`，不會寫入 Extract Run 的目錄。上游必須是 `succeeded`；Extract 失敗時仍會寫出 Brief，但要加 `--allow-failed-extract` 才能使用。開始時會印出這次 Clarify 讀的是哪個 Extract Run、Brief 的 sha，方便確認沒有指錯。
 
 Clarify 以多個 Round 進行。每一 Round，模型會先解讀你上一輪的回答，整理成 Decision，再提出下一批問題（預設一次 5 題）。問題來自 Brief 的 Open Question、Contradiction、Assumption，也包括模型根據你的回答提出的追問，以及為了寫出 Gherkin 而發現的缺口。每題都附有建議答案，可以直接採用：
 
@@ -89,20 +101,20 @@ Clarify 以多個 Round 進行。每一 Round，模型會先解讀你上一輪�
 | `/note [ID] 內容` | 主動補充或更正，例如 `/note DEC-2 VIP 是 10 天` |
 | `/done` | 結束提問；已回答的會先整理成 Decision，其餘標為未決 |
 
-模型不會替你回答：每一條 Decision 都必須對應到你的一則回答，模型也不能自行判定某題不適用或已有答案（[ADR 0007](docs/adr/0007-decisions-grounded-in-user-answers.md)）。每則回答輸入後就立即存檔，中斷後重跑同一個指令，會從中斷的地方接續；Brief 被重新產生過時會拒絕續跑，要改用 `--restart` 從頭開始。
+模型不會替你回答：每一條 Decision 都必須對應到你的一則回答，模型也不能自行判定某題不適用或已有答案（[ADR 0007](docs/adr/0007-decisions-grounded-in-user-answers.md)）。每則回答輸入後就立即存檔。中斷後，以 Clarify Run 的 id 重跑就會從中斷的地方接續；上游的 Brief 如果在這之間被改寫過，會拒絕續跑，要改用 `--restart` 從頭開始。
 
-參數：`--restart`、`--lang <en|zh|cn>`（預設沿用 Brief 的語言）、`--max-rounds <n>`（預設 8）、`--batch-size <n>`（預設 5）、`--config <path>`。
+參數：`--out <dir>`（新 Clarify Run 的目錄）、`--restart`、`--allow-failed-extract`、`--lang <en|zh|cn>`（預設沿用 Brief 的語言）、`--max-rounds <n>`（預設 8）、`--batch-size <n>`（預設 5）、`--config <path>`。
 
-產出寫在同一個 run 目錄：
+Clarify Run 的產出：
 
 | 檔案 | 內容 |
 |---|---|
-| `02-aligned.json` | Aligned Brief：原樣的 Brief 加上 Decision 與每個題目的最終狀態，是交給 Write 的正式契約（[ADR 0008](docs/adr/0008-aligned-brief-adds-decisions.md)） |
+| `02-aligned.json` | Aligned Brief：原樣的 Brief 加上 Decision 與每個題目的最終狀態，並記錄來源 Extract Run，是交給 Write 的正式契約（[ADR 0008](docs/adr/0008-aligned-brief-adds-decisions.md)） |
 | `02-aligned.md` | 給人閱讀的版本：Decision、被推翻的條目、還沒決定的題目 |
 | `02-transcript.md` | 完整的問答紀錄 |
 | `02-state.json` | 續跑用的狀態；回答只會追加、不會修改 |
 | `02-rejected.json` | 最後一次交卷仍未通過驗證的 Decision 或問題 |
-| `02-run.json` | model、prompt hash、每一 Round 的指標（含 prefix cache 命中率）、結束原因 |
+| `run.json` | 上游 Extract Run 的 id 與 Brief 的 sha、model、prompt hash、每一 Round 的指標（含 prefix cache 命中率）、結束原因 |
 | `traces/clarify-r<n>.*`、`prompts/clarify-r<n>.*` | 每一 Round 的 agent 過程與實際送出的 prompt |
 
 題目的排序目前採暫定規則（矛盾 → 依嚴重度排序的問題 → 假設），放在可替換的獨立 module，見 [ADR 0009](docs/adr/0009-question-ordering-is-a-separate-module.md)。
