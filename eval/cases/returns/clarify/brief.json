@@ -1,0 +1,46 @@
+{
+  "actors": [
+    { "id": "ACT-1", "name": "會員", "description": "已註冊並登入的購物者", "responsibilities": ["取消訂單", "申請退貨"], "evidence": [{ "file": "prd.md", "lineStart": 4, "lineEnd": 4, "quote": "- 會員：已註冊並登入的購物者。" }] },
+    { "id": "ACT-2", "name": "客服人員", "description": "處理會員退貨申請的內部人員", "responsibilities": ["審核退貨申請"], "evidence": [{ "file": "prd.md", "lineStart": 5, "lineEnd": 5, "quote": "- 客服人員：處理會員退貨申請的內部人員。" }] }
+  ],
+  "features": [
+    { "id": "FEAT-1", "name": "取消訂單", "description": "會員在期限內取消訂單並取得退款", "actorIds": ["ACT-1"], "inputs": ["訂單"], "outputs": ["退款"], "dependsOn": ["DEP-1"], "evidence": [{ "file": "prd.md", "lineStart": 9, "lineEnd": 9, "quote": "會員可於下單後 3 天內取消訂單。" }] },
+    { "id": "FEAT-2", "name": "申請退貨", "description": "會員收到商品後在會員中心申請退貨，由客服審核", "actorIds": ["ACT-1", "ACT-2"], "inputs": ["訂單", "退貨原因"], "outputs": ["退貨申請"], "dependsOn": [], "evidence": [{ "file": "prd.md", "lineStart": 14, "lineEnd": 14, "quote": "會員收到商品後可以在會員中心申請退貨。" }] }
+  ],
+  "businessRules": [
+    { "id": "BR-1", "rule": "會員可於下單後 3 天內取消訂單", "featureIds": ["FEAT-1"], "conditions": ["下單後 3 天內"], "evidence": [{ "file": "prd.md", "lineStart": 9, "lineEnd": 9, "quote": "會員可於下單後 3 天內取消訂單。" }] },
+    { "id": "BR-2", "rule": "下單後 7 天內都可以取消訂單", "featureIds": ["FEAT-1"], "conditions": ["下單後 7 天內"], "evidence": [{ "file": "faq.md", "lineStart": 4, "lineEnd": 4, "quote": "A: 可以，下單後 7 天內都可以取消喔。" }] },
+    { "id": "BR-3", "rule": "退貨申請需經客服人員審核", "featureIds": ["FEAT-2"], "conditions": [], "evidence": [{ "file": "prd.md", "lineStart": 15, "lineEnd": 15, "quote": "退貨申請需經客服人員審核。" }] },
+    { "id": "BR-4", "rule": "退貨必須在鑑賞期內提出", "featureIds": ["FEAT-2"], "conditions": ["鑑賞期內"], "evidence": [{ "file": "faq.md", "lineStart": 10, "lineEnd": 10, "quote": "A: 退貨必須在鑑賞期內提出。" }] }
+  ],
+  "acceptanceCriteria": [
+    { "id": "AC-1", "featureId": "FEAT-1", "kind": "hint", "text": "取消後應退款至原付款方式", "evidence": [{ "file": "prd.md", "lineStart": 10, "lineEnd": 10, "quote": "取消後應退款至原付款方式。" }] }
+  ],
+  "nonFunctional": [
+    { "id": "NFR-1", "category": "performance", "requirement": "退貨申請頁面回應快速", "metric": "頁面回應時間", "target": "< 2 秒", "evidence": [{ "file": "prd.md", "lineStart": 22, "lineEnd": 22, "quote": "- 退貨申請頁面回應時間需小於 2 秒。" }] }
+  ],
+  "domainEntities": [],
+  "glossary": [
+    { "id": "TERM-1", "term": "SKU", "definition": "庫存單位，每一個商品規格對應一個 SKU", "aliases": ["庫存單位"], "evidence": [{ "file": "prd.md", "lineStart": 19, "lineEnd": 19, "quote": "- SKU：庫存單位，每一個商品規格對應一個 SKU。" }] }
+  ],
+  "dependencies": [
+    { "id": "DEP-1", "name": "金流閘道", "type": "external", "description": "處理退款的外部金流服務", "evidence": [{ "file": "faq.md", "lineStart": 7, "lineEnd": 7, "quote": "A: 退款會經由金流閘道處理，約 5 到 7 個工作天入帳。" }] }
+  ],
+  "constraints": [],
+  "outOfScope": [
+    { "id": "OOS-1", "item": "跨境訂單退貨", "evidence": [{ "file": "prd.md", "lineStart": 25, "lineEnd": 25, "quote": "第一版不支援跨境訂單退貨。" }] }
+  ],
+  "openQuestions": [
+    { "id": "OQ-1", "question": "已出貨的訂單能否取消？若不能，應如何處理？", "reason": "文件標示 TBD", "relatedIds": ["FEAT-1"], "severity": "blocking", "evidence": [{ "file": "prd.md", "lineStart": 11, "lineEnd": 11, "quote": "已出貨的訂單如何處理：TBD。" }] },
+    { "id": "OQ-2", "question": "退貨運費由誰負擔？", "reason": "文件標示待確認", "relatedIds": ["FEAT-2"], "severity": "high", "evidence": [{ "file": "prd.md", "lineStart": 16, "lineEnd": 16, "quote": "退貨運費由誰負擔待確認。" }] },
+    { "id": "OQ-3", "question": "鑑賞期是幾天？", "reason": "FAQ 使用「鑑賞期」但未定義天數", "relatedIds": ["BR-4", "FEAT-2"], "severity": "high", "evidence": [{ "file": "faq.md", "lineStart": 10, "lineEnd": 10, "quote": "A: 退貨必須在鑑賞期內提出。" }] }
+  ],
+  "contradictions": [
+    { "id": "CTR-1", "conflict": "取消訂單的期限在 PRD 為下單後 3 天，在 FAQ 為 7 天", "relatedIds": ["BR-1", "BR-2"], "evidence": [{ "file": "prd.md", "lineStart": 9, "lineEnd": 9, "quote": "會員可於下單後 3 天內取消訂單。" }, { "file": "faq.md", "lineStart": 4, "lineEnd": 4, "quote": "A: 可以，下單後 7 天內都可以取消喔。" }] }
+  ],
+  "assumptions": [
+    { "id": "ASM-1", "assumption": "取消訂單與申請退貨都需要會員登入", "rationale": "會員定義為已登入的購物者", "confidence": "medium", "relatedIds": ["FEAT-1", "FEAT-2"] },
+    { "id": "ASM-2", "assumption": "取消與退貨的退款都約 5 到 7 個工作天入帳", "rationale": "FAQ 只說退款約 5 到 7 個工作天，未區分情境", "confidence": "low", "relatedIds": ["DEP-1", "FEAT-1", "FEAT-2"] }
+  ],
+  "traceability": []
+}

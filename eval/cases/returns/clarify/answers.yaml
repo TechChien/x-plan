@@ -1,0 +1,50 @@
+description: >
+  電商退貨與取消（Clarify）。量測：矛盾是否以推翻正確一方結案、一則回答拆成多條 Decision、
+  模糊回答是否追問、假設的確認與推翻、退貨功能缺少驗收條件時是否提出 gherkin-gap。
+
+language: zh
+
+answers:
+  - id: cancel-window
+    target: CTR-1
+    reply: "以 7 天為準，3 天是舊版文件；VIP 會員是 14 天"
+    expectDecisions:
+      - { all: ["7 天"], supersedes: [["3 天"]] }
+      - { all: ["VIP", "14"] }
+  - id: shipped-order
+    target: OQ-1
+    reply: "已出貨就不能取消，只能等收到後申請退貨"
+    expectDecisions:
+      - { all: ["出貨", "退貨"] }
+  - id: return-fee
+    target: OQ-2
+    reply: /ok
+    goodRecommendation: { any: ["瑕疵"] }
+    expectDecisions:
+      - { all: ["運費"] }
+  - id: appraisal
+    target: OQ-3
+    reply: "鑑賞期就是 7 天"
+    ambiguous: true
+    followUpReply:
+      any: ["起算", "開始", "到貨", "收到", "哪一天"]
+      reply: "從收到商品的隔天開始算"
+      expectDecisions:
+        - { all: ["收到"] }
+  - id: login
+    target: ASM-1
+    reply: "對，兩者都要登入"
+    expectDecisions:
+      - { all: ["登入"], confirms: true }
+  - id: refund-days
+    target: ASM-2
+    reply: "不對，取消是 5 到 7 個工作天，退貨要客服審核通過後再 10 個工作天"
+    expectDecisions:
+      - { all: ["10"], supersedes: [["5 到 7"]] }
+
+gaps:
+  - id: return-ac
+    relatedIds: [FEAT-2]
+    reply: "送出後顯示退貨申請編號，審核結果以通知告知會員"
+
+unmatchedReply: /na
