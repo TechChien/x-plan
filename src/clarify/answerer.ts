@@ -27,6 +27,8 @@ export interface AnswerSession {
 export interface Answerer {
   readonly via: string;
   ask(questions: AskedQuestion[], session: AnswerSession): Promise<void>;
+  /** Releases the input when the session ends. */
+  close?(): void;
 }
 
 /**

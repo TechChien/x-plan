@@ -3,6 +3,9 @@ import { existsSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { Command, Option } from "commander";
 import { PiBackend } from "./agent/pi-backend.ts";
+import { CLARIFY_LIMITS } from "./clarify/schema.ts";
+import { runClarify } from "./clarify/stage.ts";
+import { TtyAnswerer } from "./clarify/tty-answerer.ts";
 import { findConfigPath, loadConfig, parseConfig, type XPlanConfig } from "./config.ts";
 import { OUTPUT_LANGUAGES, type OutputLanguage } from "./shared/language.ts";
 import { runExtract } from "./extract/stage.ts";
@@ -59,6 +62,50 @@ program
     log(`Status: ${report.status}`);
     if (report.status === "failed") process.exitCode = 1;
   });
+
+program
+  .command("clarify")
+  .description("Stage 2: question the user about the Requirement Brief in <runDir> until the requirements are aligned")
+  .argument("<runDir>", "Run directory written by extract (contains 01-brief.json)")
+  .option("--restart", "discard saved progress (02-state.json) and start over")
+  .addOption(
+    new Option("--lang <code>", "output language: en, zh, cn. Default: the language the Brief was written in").choices(OUTPUT_LANGUAGES),
+  )
+  .option("--max-rounds <n>", `rounds before the session closes (default ${CLARIFY_LIMITS.maxRounds})`, positiveInt)
+  .option("--batch-size <n>", `questions per round (default ${CLARIFY_LIMITS.batchSize})`, positiveInt)
+  .option("--config <path>", "config file (default: ./x-plan.config.json, then ~/.x-plan/)")
+  .action(async (runDirArg: string, opts: { restart?: boolean; lang?: OutputLanguage; maxRounds?: number; batchSize?: number; config?: string }) => {
+    const cwd = process.cwd();
+    const runDir = resolve(cwd, runDirArg);
+    if (!existsSync(runDir) || !statSync(runDir).isDirectory()) throw new Error(`Not a directory: ${runDir}`);
+    const config = loadConfig(cwd, opts.config);
+    const log = (message: string) => console.error(`x-plan: ${message}`);
+
+    const report = await runClarify({
+      runDir,
+      config,
+      outputLanguage: opts.lang,
+      restart: opts.restart,
+      maxRounds: opts.maxRounds,
+      batchSize: opts.batchSize,
+      answerer: new TtyAnswerer(),
+      backend: () => PiBackend.create(config, runDir),
+      log,
+    });
+
+    for (const w of report.warnings) log(`warning: ${w}`);
+    for (const f of report.failures) log(`FAILED: ${f}`);
+    if (report.status === "succeeded") log(`Aligned Brief: ${join(runDir, "02-aligned.md")} (${report.termination})`);
+    else log("Progress is saved; rerun the same command to continue.");
+    log(`Status: ${report.status}`);
+    if (report.status === "failed") process.exitCode = 1;
+  });
+
+function positiveInt(value: string): number {
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 1) throw new Error(`Expected a positive integer, got ${value}`);
+  return n;
+}
 
 function resolveConfig(cwd: string, explicit: string | undefined, dryRun: boolean): XPlanConfig {
   if (!explicit && !findConfigPath(cwd) && dryRun) {

@@ -253,6 +253,8 @@ export async function runClarify(opts: ClarifyOptions): Promise<ClarifyReport> {
     }
   } catch (error) {
     return fail(error instanceof Error ? error.message : String(error));
+  } finally {
+    opts.answerer.close?.();
   }
 
   save();

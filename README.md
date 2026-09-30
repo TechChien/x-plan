@@ -2,7 +2,7 @@
 
 把需求文件轉換成 BDD（Gherkin）需求文件，讓 PM、R&D、QA 有共同的討論基礎。流程分三個 Stage：**Extract → Clarify → Write**。名詞定義見 [CONTEXT.md](CONTEXT.md)，架構決策見 [docs/adr/](docs/adr/)。
 
-目前已實作 **Stage 1：Extract**。
+目前已實作 **Stage 1：Extract** 與 **Stage 2：Clarify**。
 
 ## 安裝與設定
 
@@ -67,6 +67,45 @@ pnpm dev extract spec/ --reference "schema/**" "api-manual.md"
 | `sources/*.txt` | 轉檔後的文字；Evidence 的行號以這份文字為準 |
 | `prompts/*.md` | 實際送給模型的 system prompt 和 user message |
 | `traces/*.jsonl` / `*.md` | 每個 agent 的完整過程，包含 CoT、tool call、驗證錯誤與重試 |
+
+### Clarify：拷問到需求對齊
+
+Extract 完成後，對同一個 run 目錄執行 Clarify：
+
+```sh
+pnpm dev clarify .x-plan/runs/<run-id>
+```
+
+Clarify 以多個 Round 進行。每一 Round，模型會先解讀你上一輪的回答，整理成 Decision，再提出下一批問題（預設一次 5 題）。問題來自 Brief 的 Open Question、Contradiction、Assumption，也包括模型根據你的回答提出的追問，以及為了寫出 Gherkin 而發現的缺口。每題都附有建議答案，可以直接採用：
+
+| 輸入 | 意思 |
+|---|---|
+| 自由文字 | 用自己的話回答 |
+| `/ok` | 採用建議答案 |
+| `/1` … `/4` | 選擇選項 |
+| `/later` | 晚點再問；同一題第二次會轉為延後 |
+| `/defer [原因]` | 延後到會後決定，Write 會標成 `@deferred` |
+| `/na [原因]` | 不適用 |
+| `/note [ID] 內容` | 主動補充或更正，例如 `/note DEC-2 VIP 是 10 天` |
+| `/done` | 結束提問；已回答的會先整理成 Decision，其餘標為未決 |
+
+模型不會替你回答：每一條 Decision 都必須對應到你的一則回答，模型也不能自行判定某題不適用或已有答案（[ADR 0007](docs/adr/0007-decisions-grounded-in-user-answers.md)）。每則回答輸入後就立即存檔，中斷後重跑同一個指令，會從中斷的地方接續；Brief 被重新產生過時會拒絕續跑，要改用 `--restart` 從頭開始。
+
+參數：`--restart`、`--lang <en|zh|cn>`（預設沿用 Brief 的語言）、`--max-rounds <n>`（預設 8）、`--batch-size <n>`（預設 5）、`--config <path>`。
+
+產出寫在同一個 run 目錄：
+
+| 檔案 | 內容 |
+|---|---|
+| `02-aligned.json` | Aligned Brief：原樣的 Brief 加上 Decision 與每個題目的最終狀態，是交給 Write 的正式契約（[ADR 0008](docs/adr/0008-aligned-brief-adds-decisions.md)） |
+| `02-aligned.md` | 給人閱讀的版本：Decision、被推翻的條目、還沒決定的題目 |
+| `02-transcript.md` | 完整的問答紀錄 |
+| `02-state.json` | 續跑用的狀態；回答只會追加、不會修改 |
+| `02-rejected.json` | 最後一次交卷仍未通過驗證的 Decision 或問題 |
+| `02-run.json` | model、prompt hash、每一 Round 的指標（含 prefix cache 命中率）、結束原因 |
+| `traces/clarify-r<n>.*`、`prompts/clarify-r<n>.*` | 每一 Round 的 agent 過程與實際送出的 prompt |
+
+題目的排序目前採暫定規則（矛盾 → 依嚴重度排序的問題 → 假設），放在可替換的獨立 module，見 [ADR 0009](docs/adr/0009-question-ordering-is-a-separate-module.md)。
 
 ## 調整 prompt
 
