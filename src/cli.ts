@@ -1,9 +1,10 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import { PiBackend } from "./agent/pi-backend.ts";
 import { findConfigPath, loadConfig, parseConfig, type XPlanConfig } from "./config.ts";
+import { OUTPUT_LANGUAGES, type OutputLanguage } from "./extract/language.ts";
 import { runExtract } from "./extract/stage.ts";
 
 const program = new Command();
@@ -15,10 +16,19 @@ program
   .argument("<dir>", "directory of Source Documents (.md .txt .pdf .docx)")
   .option("--include <globs...>", "only scan files matching these globs")
   .option("--exclude <globs...>", "skip files matching these globs")
+  .option(
+    "--reference <globs...>",
+    "also mark matching files as Reference Documents (schemas, API manuals): extracted only where the requirements need them. Files under <dir>/references/ always are",
+  )
+  .addOption(
+    new Option("--lang <code>", "output language: en (English), zh (Traditional Chinese), cn (Simplified Chinese). Overrides config outputLanguage; default en").choices(
+      OUTPUT_LANGUAGES,
+    ),
+  )
   .option("--out <dir>", "run directory (default: ./.x-plan/runs/<run-id>)")
   .option("--config <path>", "config file (default: ./x-plan.config.json, then ~/.x-plan/)")
   .option("--dry-run", "scan, convert, pack and render prompts without calling the model")
-  .action(async (dirArg: string, opts: { include?: string[]; exclude?: string[]; out?: string; config?: string; dryRun?: boolean }) => {
+  .action(async (dirArg: string, opts: { include?: string[]; exclude?: string[]; reference?: string[]; lang?: OutputLanguage; out?: string; config?: string; dryRun?: boolean }) => {
     const cwd = process.cwd();
     const dir = resolve(cwd, dirArg);
     if (!existsSync(dir) || !statSync(dir).isDirectory()) throw new Error(`Not a directory: ${dir}`);
@@ -34,6 +44,8 @@ program
       config,
       include: opts.include,
       exclude: opts.exclude,
+      reference: opts.reference,
+      outputLanguage: opts.lang,
       dryRun: opts.dryRun,
       backend: () => PiBackend.create(config, runDir),
       log,

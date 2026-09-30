@@ -30,6 +30,10 @@ _Avoid_: Generate, render
 使用者提供、作為需求來源的原始檔案。
 _Avoid_: Input file, spec, attachment
 
+**Reference Document**:
+放在 `references/` 目錄下或由使用者另行標記為參考資料的 Source Document，例如資料庫 schema、API 手冊。只擷取需求文件用得到的部分，本身不產生 Actor 或 Feature；未標記的 Source Document 即為需求文件。
+_Avoid_: Appendix, supporting file
+
 **Requirement Brief**:
 Extract 的產出，是從 Source Document 擷取出的結構化需求資訊，每條事實都附有 Evidence。
 _Avoid_: Summary, digest, extraction result

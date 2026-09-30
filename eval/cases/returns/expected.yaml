@@ -3,6 +3,7 @@ description: >
   以及真正待確認的問題（TBD、待確認、未定義名詞）是否保留。
 
 packing: auto
+language: zh
 
 expect:
   - { id: actor-member, section: actors, all: ["會員"] }

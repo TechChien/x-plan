@@ -1,4 +1,5 @@
 import type { SourceIndex } from "./evidence.ts";
+import { languageErrors, type OutputLanguage } from "./language.ts";
 import { FACT_SECTIONS, type Evidence, type FactSectionName, type Facts } from "./schema.ts";
 
 export type ItemSection = FactSectionName | "openQuestions";
@@ -154,6 +155,27 @@ function pruneRefs(section: ItemSection, item: Item, removed: Set<string>): Item
     } else next[ref.field] = ((item[ref.field] ?? []) as string[]).filter((id) => !removed.has(id));
   }
   return next;
+}
+
+/** Items not written in the output language. Unlike other issues these never drop an item. */
+export function checkLanguage(facts: Partial<Facts>, lang: OutputLanguage): ItemIssue[] {
+  return (Object.keys(facts) as ItemSection[]).flatMap((section) =>
+    itemsOf(facts, section).flatMap((item, index) => {
+      const errors = languageErrors(item, lang);
+      return errors.length ? [{ section, index, id: item.id, errors }] : [];
+    }),
+  );
+}
+
+/** One entry per item, errors of both lists combined. */
+export function mergeIssues(a: ItemIssue[], b: ItemIssue[]): ItemIssue[] {
+  const byItem = new Map<string, ItemIssue>();
+  for (const issue of [...a, ...b]) {
+    const key = `${issue.section}[${issue.index}]`;
+    const seen = byItem.get(key);
+    byItem.set(key, seen ? { ...seen, errors: [...seen.errors, ...issue.errors] } : issue);
+  }
+  return [...byItem.values()];
 }
 
 export function formatIssues(issues: ItemIssue[]): string {

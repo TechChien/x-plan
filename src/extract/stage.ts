@@ -10,6 +10,7 @@ import { convertFile, type SourceText } from "../source/convert.ts";
 import { scanDirectory } from "../source/scan.ts";
 import { applyAnalysis, checkAnalysis, type OpIssue } from "./apply-analysis.ts";
 import { SourceIndex } from "./evidence.ts";
+import { LANGUAGE_NAMES, languageErrors, type OutputLanguage } from "./language.ts";
 import { mergeFacts } from "./merge.ts";
 import { buildAnalysisPrompt, buildFactsPrompt, buildFactsSystemPrompt, buildNudge, type BuiltPrompt } from "./prompts.ts";
 import { renderBriefMarkdown } from "./render.ts";
@@ -23,7 +24,7 @@ import {
   type RejectedItem,
   type RequirementBrief,
 } from "./schema.ts";
-import { checkFacts, dropInvalid, formatIssues } from "./validate.ts";
+import { checkFacts, checkLanguage, dropInvalid, formatIssues, mergeIssues } from "./validate.ts";
 
 /** Submit calls per agent: the first plus two retries (Q17). */
 export const MAX_SUBMIT_ATTEMPTS = 3;
@@ -37,6 +38,10 @@ export interface ExtractOptions {
   config: XPlanConfig;
   include?: string[];
   exclude?: string[];
+  /** Globs marking Reference Documents: supporting material extracted only where the requirement documents need it. */
+  reference?: string[];
+  /** Overrides `config.outputLanguage`; English when neither is set. */
+  outputLanguage?: OutputLanguage;
   sections?: FactSectionName[];
   dryRun?: boolean;
   /** How documents are grouped into batches; evals use "per-file" to force several batches. */
@@ -72,10 +77,15 @@ export async function runExtract(opts: ExtractOptions): Promise<ExtractReport> {
   mkdirSync(runDir, { recursive: true });
 
   // Scan and convert.
-  const scan = await scanDirectory(opts.dir, { include: opts.include, exclude: opts.exclude });
+  const scan = await scanDirectory(opts.dir, { include: opts.include, exclude: opts.exclude, reference: opts.reference });
   if (!scan.files.length) throw new Error(`No supported documents (.md .txt .pdf .docx) found in ${opts.dir}`);
+  if (scan.reference.length === scan.files.length) throw new Error("Every document is a Reference Document; at least one requirement document is needed");
   if (scan.skipped.length) warnings.push(`Skipped ${scan.skipped.length} unsupported file(s): ${scan.skipped.join(", ")}`);
-  log(`Found ${scan.files.length} document(s)${scan.skipped.length ? `, skipped ${scan.skipped.length}` : ""}`);
+  if (opts.reference?.length && !scan.reference.length) warnings.push(`No document matched the reference globs: ${opts.reference.join(", ")}`);
+  const reference = new Set(scan.reference);
+  log(
+    `Found ${scan.files.length} document(s)${reference.size ? ` (${reference.size} reference)` : ""}${scan.skipped.length ? `, skipped ${scan.skipped.length}` : ""}`,
+  );
 
   const sources: SourceText[] = [];
   for (const file of scan.files) {
@@ -86,17 +96,26 @@ export async function runExtract(opts: ExtractOptions): Promise<ExtractReport> {
 
   // Pack into bins.
   const lib = new PromptLibrary(config.promptsDir);
-  const factsSystem = buildFactsSystemPrompt(lib, sections);
+  const hasReferences = reference.size > 0;
+  const language = opts.outputLanguage ?? config.outputLanguage ?? "en";
+  /** Items still in the wrong language after the last attempt are kept: their content is valid. */
+  const warnLanguage = (label: string, where: string[]) =>
+    warnings.push(`${label}: ${where.length} item(s) still not written in ${LANGUAGE_NAMES[language]} after the last attempt, kept: ${where.join(", ")}`);
+  const factsSystem = buildFactsSystemPrompt(lib, sections, { hasReferences, language });
   const budget = computeBudget({
     contextWindow: config.provider.contextWindow,
     maxOutputTokens: config.provider.maxOutputTokens,
     systemPromptTokens: estimateTokens(factsSystem),
   });
-  const bins = packBins(sources, budget, opts.packing);
+  const bins = packBins(sources, budget, opts.packing, reference);
   const allFiles = sources.map((s) => s.path);
   log(`Packed into ${bins.length} batch(es) (budget ${budget} tokens each)`);
+  const blind = bins.filter((b) => b.segments.every((s) => s.reference) && !b.context?.length).map((b) => b.index);
+  if (blind.length) {
+    warnings.push(`Batch(es) ${blind.join(", ")} hold only Reference Documents without the requirement documents (too large to repeat); relevance cannot be judged there`);
+  }
 
-  const factsPrompts = bins.map((bin) => buildFactsPrompt(lib, { bin, totalBins: bins.length, allFiles, sections }));
+  const factsPrompts = bins.map((bin) => buildFactsPrompt(lib, { bin, totalBins: bins.length, allFiles, sections, hasReferences, language }));
   bins.forEach((bin, i) => savePrompt(runDir, `facts-bin${bin.index}`, factsPrompts[i] as BuiltPrompt));
 
   const writeRun = (status: ExtractReport["status"], extra: Record<string, unknown> = {}) =>
@@ -105,10 +124,17 @@ export async function runExtract(opts: ExtractOptions): Promise<ExtractReport> {
       createdAt: new Date().toISOString(),
       stage: "extract",
       inputDir: opts.dir,
-      files: sources.map((s) => ({ path: s.path, converted: s.converted, sha256: sha256(s.text), text: `sources/${s.path}.txt` })),
+      files: sources.map((s) => ({
+        path: s.path,
+        ...(reference.has(s.path) ? { reference: true } : {}),
+        converted: s.converted,
+        sha256: sha256(s.text),
+        text: `sources/${s.path}.txt`,
+      })),
       skipped: scan.skipped,
       model: config.provider.model,
       thinking: thinkingFor(config, "extract"),
+      outputLanguage: language,
       sections,
       promptHashes: lib.hashes(),
       budget,
@@ -150,11 +176,16 @@ export async function runExtract(opts: ExtractOptions): Promise<ExtractReport> {
         parameters: factsSubmissionSchema(sections),
         check: (params, { isLast }) => {
           const result = checkFacts(params, { index, allowedFiles });
+          const wrongLanguage = checkLanguage(result.facts, language);
+          if (!isLast && (result.issues.length || wrongLanguage.length)) {
+            const all = mergeIssues(result.issues, wrongLanguage);
+            return { retry: validationFeedback(lib, "submit_facts", formatIssues(all), all.length) };
+          }
+          if (wrongLanguage.length) warnLanguage(label, wrongLanguage.map((i) => i.id ?? `${i.section}[${i.index}]`));
           if (!result.issues.length) {
             relocated += result.relocated;
             return { accept: { facts: result.facts, dropped: [] } };
           }
-          if (!isLast) return { retry: validationFeedback(lib, "submit_facts", formatIssues(result.issues), result.issues.length) };
           relocated += result.relocated;
           const { facts, dropped } = dropInvalid(result.facts, result.issues);
           return { accept: { facts, dropped: dropped.map((d) => ({ ...d, stage: "facts" as const, bin: bin.index })) } };
@@ -187,7 +218,7 @@ export async function runExtract(opts: ExtractOptions): Promise<ExtractReport> {
   log(`Merged: ${countItems(merged.facts)} item(s), ${merged.deduped.size} exact-name duplicate(s) folded`);
 
   // Analysis (reduce).
-  const analysisPrompt = buildAnalysisPrompt(lib, merged.facts);
+  const analysisPrompt = buildAnalysisPrompt(lib, merged.facts, scan.reference, language);
   savePrompt(runDir, "analysis", analysisPrompt);
   const analysisTokens = estimateTokens(analysisPrompt.systemPrompt) + estimateTokens(analysisPrompt.userMessage);
   if (analysisTokens > config.provider.contextWindow - config.provider.maxOutputTokens) {
@@ -212,7 +243,10 @@ export async function runExtract(opts: ExtractOptions): Promise<ExtractReport> {
         parameters: AnalysisSubmissionSchema,
         check: (params: AnalysisSubmission, { isLast }) => {
           const { issues } = checkAnalysis(merged.facts, params);
-          if (issues.length && !isLast) return { retry: validationFeedback(lib, "submit_analysis", formatOpIssues(issues), issues.length) };
+          const wrongLanguage = checkAnalysisLanguage(params, language);
+          const all = [...issues, ...wrongLanguage];
+          if (all.length && !isLast) return { retry: validationFeedback(lib, "submit_analysis", formatOpIssues(all), all.length) };
+          if (wrongLanguage.length) warnLanguage("analysis", wrongLanguage.map((i) => i.op));
           return { accept: params };
         },
       },
@@ -261,6 +295,16 @@ function validationFeedback(lib: PromptLibrary, toolName: string, errors: string
   return lib.render("shared/validation-errors", { toolName, count: String(count), errors }).trim();
 }
 
+/** Language of the items Analysis adds to the Brief; merge and resolution reasons only reach the log. */
+function checkAnalysisLanguage(ops: AnalysisSubmission, lang: OutputLanguage): OpIssue[] {
+  return (["contradictions", "openQuestions", "assumptions"] as const).flatMap((kind) =>
+    (ops[kind] as unknown[]).flatMap((item, i) => {
+      const errors = languageErrors(item, lang);
+      return errors.length ? [{ op: `${kind}[${i}]`, errors }] : [];
+    }),
+  );
+}
+
 function formatOpIssues(issues: OpIssue[]): string {
   return issues.map((i) => `- ${i.op}:\n${i.errors.map((e) => `    - ${e}`).join("\n")}`).join("\n");
 }
@@ -286,7 +330,13 @@ function binSummary(bin: Bin) {
   return {
     index: bin.index,
     tokens: bin.tokens,
-    segments: bin.segments.map((s) => ({ path: s.path, lines: `${s.lineStart}-${s.lineEnd}`, ...(s.part ? { part: `${s.part.index}/${s.part.total}` } : {}) })),
+    segments: bin.segments.map((s) => ({
+      path: s.path,
+      lines: `${s.lineStart}-${s.lineEnd}`,
+      ...(s.part ? { part: `${s.part.index}/${s.part.total}` } : {}),
+      ...(s.reference ? { reference: true } : {}),
+    })),
+    ...(bin.context?.length ? { context: bin.context.map((s) => s.path) } : {}),
   };
 }
 

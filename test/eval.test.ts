@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
@@ -77,11 +77,39 @@ describe("scoreCase", () => {
     );
     expect(score.recall).toEqual({ found: ["member", "3d"], missing: ["cs"] });
     expect(score.contradictions).toEqual({ found: ["window"], missing: ["other"] });
+    expect(score.items).toBe(4);
+  });
+
+  test("noise: unexpected labels hit by any keyword, optionally limited to sections", () => {
+    const brief: RequirementBrief = {
+      ...emptyFacts(),
+      actors: [actor("ACT-1", "Dealer", [ev("ref.md", 1, "vendor")])],
+      businessRules: [rule("BR-1", "calls get_cpe", [])],
+      contradictions: [],
+      assumptions: [],
+      traceability: [{ file: "ref.md", itemIds: ["ACT-1"] }],
+    };
+    const score = scoreCase(
+      {
+        expect: [],
+        unexpected: [
+          { id: "dealer", any: ["dealer", "reseller"] },
+          { id: "endpoint-as-feature", section: "features", any: ["get_cpe"] },
+          { id: "vendor", any: ["vendor"] },
+        ],
+      },
+      brief,
+      { merged: [], resolved: [] },
+    );
+    // Evidence is not item text, so "vendor" in a quote does not count.
+    expect(score.noise).toEqual({ hits: [{ label: "dealer", itemIds: ["ACT-1"] }], labels: 3 });
+    expect(score.items).toBe(2);
   });
 });
 
 describe("eval cases", () => {
-  test.each(["returns", "glossary-split"])("%s has a valid expected.yaml and documents", (name) => {
+  // Every case present, including local-only ones such as the gitignored cpe-inventory.
+  test.each(readdirSync(EVAL_CASES))("%s has a valid expected.yaml and documents", (name) => {
     const expected = loadExpected(join(EVAL_CASES, name, "expected.yaml"));
     expect(expected.expect.length).toBeGreaterThan(0);
     expect(existsSync(join(EVAL_CASES, name, "docs"))).toBe(true);

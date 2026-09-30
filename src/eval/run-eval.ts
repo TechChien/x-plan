@@ -63,6 +63,8 @@ export async function runEval(opts: EvalOptions): Promise<RunResult[]> {
           runDir,
           config: opts.config,
           packing: expected.packing,
+          reference: expected.reference,
+          outputLanguage: expected.language,
           backend: () => opts.backend(runDir),
           log: (m) => opts.log(`  ${m}`),
         });
@@ -126,7 +128,12 @@ export function renderReport(results: RunResult[]): string {
   const out: string[] = ["# x-plan Extract eval", ""];
   const cases = [...new Set(results.map((r) => r.caseName))];
 
-  out.push("## 總覽", "", "| case | 成功 | 召回率 | 矛盾偵測 | Rejected | 交卷次數 (schema/check 錯) | nudges | tokens in/out/reasoning |", "|---|---|---|---|---|---|---|---|");
+  out.push(
+    "## 總覽",
+    "",
+    "| case | 成功 | 召回率 | 矛盾偵測 | 雜訊 | 條目數 | Rejected | 交卷次數 (schema/check 錯) | nudges | tokens in/out/reasoning |",
+    "|---|---|---|---|---|---|---|---|---|---|",
+  );
   for (const name of cases) {
     const rs = results.filter((r) => r.caseName === name);
     const scored = rs.filter((r) => r.score);
@@ -134,12 +141,15 @@ export function renderReport(results: RunResult[]): string {
     const total = scored.reduce((n, r) => n + r.score!.recall.found.length + r.score!.recall.missing.length, 0);
     const cFound = scored.reduce((n, r) => n + r.score!.contradictions.found.length, 0);
     const cTotal = scored.reduce((n, r) => n + r.score!.contradictions.found.length + r.score!.contradictions.missing.length, 0);
+    const nHit = scored.reduce((n, r) => n + r.score!.noise.hits.length, 0);
+    const nTotal = scored.reduce((n, r) => n + r.score!.noise.labels, 0);
+    const items = scored.length ? avg(scored.map((r) => r.score!.items)) : "—";
     const m = (f: (x: RunMetrics) => number) => avg(rs.map((r) => f(r.metrics)));
     out.push(
-      `| ${name} | ${rs.filter((r) => r.status === "succeeded").length}/${rs.length} | ${pct(found, total)} | ${pct(cFound, cTotal)} | ${avg(rs.map((r) => r.rejectedCount))} | ${m((x) => x.submitAttempts)} (${m((x) => x.schemaFailures)}/${m((x) => x.checkFailures)}) | ${m((x) => x.nudges)} | ${m((x) => x.inputTokens)}/${m((x) => x.outputTokens)}/${m((x) => x.reasoningTokens)} |`,
+      `| ${name} | ${rs.filter((r) => r.status === "succeeded").length}/${rs.length} | ${pct(found, total)} | ${pct(cFound, cTotal)} | ${pct(nHit, nTotal)} | ${items} | ${avg(rs.map((r) => r.rejectedCount))} | ${m((x) => x.submitAttempts)} (${m((x) => x.schemaFailures)}/${m((x) => x.checkFailures)}) | ${m((x) => x.nudges)} | ${m((x) => x.inputTokens)}/${m((x) => x.outputTokens)}/${m((x) => x.reasoningTokens)} |`,
     );
   }
-  out.push("", "_數值為各次執行的平均；召回率與矛盾偵測為所有執行合計。_", "");
+  out.push("", "_數值為各次執行的平均；召回率、矛盾偵測與雜訊為所有執行合計。雜訊是 `unexpected` 標籤的命中率，越低越好。_", "");
 
   out.push(...renderResolution(results));
 
@@ -154,6 +164,8 @@ export function renderReport(results: RunResult[]): string {
     const s = r.score;
     if (s.recall.missing.length) out.push(`- 未擷取：${s.recall.missing.join(", ")}`);
     if (s.contradictions.missing.length) out.push(`- 未偵測的矛盾：${s.contradictions.missing.join(", ")}`);
+    if (s.resolution.realOpen.neverRaised.length) out.push(`- 未提出的真問題：${s.resolution.realOpen.neverRaised.join(", ")}`);
+    for (const n of s.noise.hits) out.push(`- 雜訊 [${n.label}] ${n.itemIds.join(", ")}`);
     for (const h of s.resolution.harmful) out.push(`- ⚠ 誤刪真問題 [${h.label}] ${h.id}「${h.question}」`);
     for (const b of s.resolution.beneficial) out.push(`- ✓ 正確移除 [${b.label}] ${b.id}「${b.question}」`);
     for (const u of s.resolution.unlabeled) out.push(`- ? 待人工判斷 ${u.id}「${u.question}」（由 ${u.answeredByIds.join(", ")}：${u.reason}）`);

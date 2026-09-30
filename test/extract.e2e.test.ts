@@ -9,7 +9,8 @@ import { ev } from "./helpers/facts.ts";
 import { ScriptedBackend, type ScriptedTurn } from "./helpers/scripted-backend.ts";
 
 const FIXTURE = join(import.meta.dirname, "fixtures", "returns");
-const config = parseConfig({ provider: { baseUrl: "http://unused" } });
+/** The fixture and the scripted facts are Traditional Chinese. */
+const config = parseConfig({ provider: { baseUrl: "http://unused" }, outputLanguage: "zh" });
 
 const facts = (brCancelQuote: string) => ({
   actors: [
@@ -115,6 +116,60 @@ describe("runExtract end to end (scripted agents)", () => {
     const report = await runExtract({ dir: FIXTURE, runDir: runDir(), config, backend: async () => fake, log: () => {} });
     expect(report.status).toBe("failed");
     expect(report.failures[0]).toMatch(/facts-bin1 failed \(no-submit\)/);
+  });
+
+  test("a submission in the wrong script is sent back, like any other issue", async () => {
+    const good = facts("A: 可以，下單後 7 天內都可以取消喔。");
+    const simplified = { ...good, businessRules: good.businessRules.map((b) => (b.id === "BR-3" ? { ...b, rule: "退货需客服审核" } : b)) };
+    const analysisSimplified = { ...analysis, openQuestions: [{ ...analysis.openQuestions[0]!, question: "这个鉴赏期为几天？" }] };
+    const fake = backend([{ call: simplified }, { call: good }], [{ call: analysisSimplified }, { call: analysis }]);
+    const dir = runDir();
+    const report = await runExtract({ dir: FIXTURE, runDir: dir, config, backend: async () => fake, log: () => {} });
+
+    expect(report.status).toBe("succeeded");
+    expect(report.warnings.filter((w) => w.includes("not written"))).toEqual([]);
+    expect(readFileSync(join(dir, "traces", "facts-bin1.md"), "utf8")).toContain("not written in Traditional Chinese (繁體中文): rule");
+    expect(readFileSync(join(dir, "traces", "analysis.md"), "utf8")).toContain("not written in Traditional Chinese (繁體中文): question");
+    expect(JSON.parse(readFileSync(join(dir, "run.json"), "utf8")).outputLanguage).toBe("zh");
+  });
+
+  test("still in the wrong script after the last attempt: the item is kept with a warning, not rejected", async () => {
+    const good = facts("A: 可以，下單後 7 天內都可以取消喔。");
+    const simplified = { ...good, businessRules: good.businessRules.map((b) => (b.id === "BR-3" ? { ...b, rule: "退货需客服审核" } : b)) };
+    const fake = backend([{ call: simplified }, { call: simplified }, { call: simplified }]);
+    const report = await runExtract({ dir: FIXTURE, runDir: runDir(), config, backend: async () => fake, log: () => {} });
+
+    expect(report.status).toBe("succeeded");
+    expect(report.rejected).toEqual([]);
+    expect(report.brief!.businessRules.map((b) => b.rule)).toContain("退货需客服审核");
+    expect(report.warnings).toContainEqual(expect.stringMatching(/^facts-bin1: 1 item\(s\) still not written in Traditional Chinese.*: BR-3$/));
+  });
+
+  test("the default output language is English", async () => {
+    const dir = runDir();
+    await runExtract({ dir: FIXTURE, runDir: dir, config: parseConfig({ provider: { baseUrl: "http://unused" } }), dryRun: true, backend: async () => backend([]), log: () => {} });
+    expect(readFileSync(join(dir, "prompts", "facts-bin1.system.md"), "utf8")).toContain("Write every field in English");
+    expect(JSON.parse(readFileSync(join(dir, "run.json"), "utf8")).outputLanguage).toBe("en");
+  });
+
+  test("Reference Documents are marked in the prompts and in run.json", async () => {
+    const fake = backend([{ call: facts("A: 可以，下單後 7 天內都可以取消喔。") }]);
+    const dir = runDir();
+    const report = await runExtract({ dir: FIXTURE, runDir: dir, config, reference: ["faq.md"], backend: async () => fake, log: () => {} });
+    expect(report.status).toBe("succeeded");
+
+    const [factsSession, analysisSession] = fake.sessions;
+    expect(factsSession!.systemPrompt).toContain("### Reference documents");
+    expect(factsSession!.prompts[0]).toContain('<document path="faq.md" role="reference">');
+    expect(analysisSession!.systemPrompt).toContain("not requirements: `faq.md`.");
+    const run = JSON.parse(readFileSync(join(dir, "run.json"), "utf8"));
+    expect(run.files.filter((f: { reference?: boolean }) => f.reference).map((f: { path: string }) => f.path)).toEqual(["faq.md"]);
+  });
+
+  test("a Run needs at least one requirement document", async () => {
+    await expect(
+      runExtract({ dir: FIXTURE, runDir: runDir(), config, reference: ["*.md"], dryRun: true, backend: async () => backend([]), log: () => {} }),
+    ).rejects.toThrow(/at least one requirement document/);
   });
 
   test("dry run renders prompts without creating a backend", async () => {

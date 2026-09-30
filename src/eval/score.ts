@@ -29,6 +29,10 @@ export interface CaseScore {
   recall: { found: string[]; missing: string[] };
   contradictions: { found: string[]; missing: string[] };
   resolution: ResolutionScore;
+  /** `unexpected` labels that matched, with the matching item ids, out of `labels`. */
+  noise: { hits: { label: string; itemIds: string[] }[]; labels: number };
+  /** Items in the Brief, every section. */
+  items: number;
 }
 
 /** Text of an item for keyword matching: every string value except Evidence and ids. */
@@ -68,7 +72,16 @@ export function scoreCase(expected: Expected, brief: RequirementBrief, log: Anal
     (hit ? contradictions.found : contradictions.missing).push(c.id);
   }
 
-  return { recall, contradictions, resolution: scoreResolution(expected, brief.openQuestions, log) };
+  const itemSections = Object.keys(sections).filter((s) => s !== "traceability");
+  const hits: CaseScore["noise"]["hits"] = [];
+  for (const u of expected.unexpected ?? []) {
+    const names = u.section ? (Array.isArray(u.section) ? u.section : [u.section]) : itemSections;
+    const itemIds = names.flatMap((s) => (sections[s] ?? []).filter((item) => u.any.some((k) => has(itemText(item), k))).map((item) => item.id));
+    if (itemIds.length) hits.push({ label: u.id, itemIds });
+  }
+  const items = itemSections.reduce((n, s) => n + (sections[s]?.length ?? 0), 0);
+
+  return { recall, contradictions, resolution: scoreResolution(expected, brief.openQuestions, log), noise: { hits, labels: expected.unexpected?.length ?? 0 }, items };
 }
 
 /**

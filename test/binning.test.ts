@@ -48,6 +48,46 @@ describe("packBins per-file", () => {
   });
 });
 
+describe("packBins with Reference Documents", () => {
+  const perLine = splitSource(doc("one.md", 1), Infinity)[0]!.tokens;
+  const sources = [doc("req.md", 5), doc("ref-a.md", 60), doc("ref-b.md", 60), doc("ref-c.md", 10)];
+  const reference = new Set(["ref-a.md", "ref-b.md", "ref-c.md"]);
+
+  test("auto: the first bin owns the requirement documents; every other bin shows them as context", () => {
+    const budget = perLine * 80;
+    const bins = packBins(sources, budget, "auto", reference);
+    expect(bins.length).toBeGreaterThan(1);
+    expect(bins[0]!.segments.map((s) => s.path)[0]).toBe("req.md");
+    expect(bins[0]!.context).toBeUndefined();
+    for (const bin of bins.slice(1)) {
+      expect(bin.context!.map((s) => s.path)).toEqual(["req.md"]);
+      expect(bin.segments.every((s) => s.reference)).toBe(true);
+    }
+    for (const bin of bins) expect(bin.tokens).toBeLessThanOrEqual(budget);
+    expect(bins.flatMap((b) => b.segments.map((s) => s.path)).sort()).toEqual(["ref-a.md", "ref-b.md", "ref-c.md", "req.md"]);
+  });
+
+  test("per-file: requirement files keep their own bins; reference bins carry the requirements as context", () => {
+    const bins = packBins(sources, 10_000, "per-file", reference);
+    expect(bins.map((b) => [b.index, b.segments[0]!.path, b.context?.map((s) => s.path)])).toEqual([
+      [1, "req.md", undefined],
+      [2, "ref-a.md", ["req.md"]],
+      [3, "ref-b.md", ["req.md"]],
+      [4, "ref-c.md", ["req.md"]],
+    ]);
+  });
+
+  test("requirement documents too large to repeat: references are packed without context", () => {
+    const bins = packBins([doc("req.md", 60), doc("ref.md", 60)], perLine * 100, "auto", new Set(["ref.md"]));
+    expect(bins.every((b) => !b.context)).toBe(true);
+    expect(bins.flatMap((b) => b.segments).find((s) => s.path === "ref.md")!.reference).toBe(true);
+  });
+
+  test("without references the result is the plain packing", () => {
+    expect(packBins(sources, perLine * 80, "auto", new Set())).toEqual(packBins(sources, perLine * 80));
+  });
+});
+
 describe("splitSource", () => {
   test("splits an oversized file at Markdown headings, keeping original line numbers", () => {
     const text = ["# A", ...Array(40).fill("aaa aaa aaa aaa"), "# B", ...Array(40).fill("bbb bbb bbb bbb")].join("\n");

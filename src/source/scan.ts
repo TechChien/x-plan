@@ -5,9 +5,14 @@ import ignore from "ignore";
 
 export const SUPPORTED_EXTENSIONS = [".md", ".txt", ".pdf", ".docx"] as const;
 
+/** Everything under this top-level directory of the scanned directory is a Reference Document. */
+export const REFERENCE_DIR = "references";
+
 export interface ScanOptions {
   include?: string[];
   exclude?: string[];
+  /** Globs marking further Reference Documents, in addition to `references/`. */
+  reference?: string[];
 }
 
 export interface ScanResult {
@@ -15,6 +20,8 @@ export interface ScanResult {
   files: string[];
   /** Files skipped because their extension is unsupported. */
   skipped: string[];
+  /** The subset of `files` under `references/` or matched by `reference`. */
+  reference: string[];
 }
 
 export async function scanDirectory(dir: string, options: ScanOptions = {}): Promise<ScanResult> {
@@ -37,7 +44,8 @@ export async function scanDirectory(dir: string, options: ScanOptions = {}): Pro
     if ((SUPPORTED_EXTENSIONS as readonly string[]).includes(ext)) files.push(file);
     else skipped.push(file);
   }
-  return { files, skipped };
+  const referenced = new Set(await fg([`${REFERENCE_DIR}/**`, ...(options.reference ?? [])], { cwd: dir, dot: false, onlyFiles: true }));
+  return { files, skipped, reference: files.filter((f) => referenced.has(f)) };
 }
 
 export function toPosix(base: string, path: string): string {

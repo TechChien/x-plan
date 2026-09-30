@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import { parse as parseYaml } from "yaml";
+import { OUTPUT_LANGUAGES } from "../extract/language.ts";
 
 const Keywords = Type.Array(Type.String(), { minItems: 1 });
 /** A question label: matches an open question whose text contains ANY keyword. */
@@ -14,6 +15,10 @@ const QuestionLabel = Type.Object({ id: Type.String(), any: Keywords });
 export const ExpectedSchema = Type.Object({
   description: Type.Optional(Type.String()),
   packing: Type.Optional(Type.Union([Type.Literal("auto"), Type.Literal("per-file")])),
+  /** Output language of the Run; the keywords below are written in it. Default en. */
+  language: Type.Optional(Type.Union(OUTPUT_LANGUAGES.map((l) => Type.Literal(l)))),
+  /** Globs (relative to `docs/`) marking Reference Documents. */
+  reference: Type.Optional(Type.Array(Type.String())),
   /** Facts that must be extracted: an item in one of `section` whose text contains ALL keywords. */
   expect: Type.Array(
     Type.Object({
@@ -31,6 +36,13 @@ export const ExpectedSchema = Type.Object({
       /** Answered somewhere in the documents: if raised, it should be resolved. */
       shouldBeResolved: Type.Optional(Type.Array(QuestionLabel)),
     }),
+  ),
+  /**
+   * Noise: content the Brief should not contain, such as reference material the requirements do not need.
+   * Hit when an item in one of `section` (default: every section) contains ANY keyword.
+   */
+  unexpected: Type.Optional(
+    Type.Array(Type.Object({ id: Type.String(), section: Type.Optional(Type.Union([Type.String(), Type.Array(Type.String())])), any: Keywords })),
   ),
 });
 export type Expected = Static<typeof ExpectedSchema>;

@@ -4,6 +4,7 @@ description: >
   「鑑賞期、SKU、點數、會員」有答案（該被解答）；「VIP 會員、退貨運費」沒有答案（必須保留）。
 
 packing: per-file
+language: zh
 
 expect:
   - { id: feat-return, section: features, all: ["退貨"] }

@@ -22,7 +22,39 @@ pnpm dev extract <目錄>              # 或建置後使用 x-plan extract <目�
 pnpm dev extract <目錄> --dry-run    # 只做掃描、轉檔、裝箱並渲染 prompt，不呼叫模型
 ```
 
-參數：`--include <glob...>`、`--exclude <glob...>`、`--out <dir>`、`--config <path>`。
+參數：`--include <glob...>`、`--exclude <glob...>`、`--reference <glob...>`、`--lang <en|zh|cn>`、`--out <dir>`、`--config <path>`。
+
+### 輸出語言
+
+Brief 一律以英文輸出，與來源文件的語言無關。要改用中文，在 config 設定 `"outputLanguage"`，或用 `--lang` 覆寫（CLI 優先於 config）：
+
+| 代碼 | 語言 |
+|---|---|
+| `en` | 英文（預設） |
+| `zh` | 繁體中文 |
+| `cn` | 簡體中文 |
+
+引用原文、識別名稱（資料表、欄位、端點、檔名）和 glossary 的 `term` / `aliases` 保留原文，其餘一律使用輸出語言。交卷時由程式檢查語言：`en` 不得出現中日文字；`zh` 不得出現簡體專用字，`cn` 不得出現繁體專用字，而且長段的敘述欄位不得是英文。不符合就回饋重交；最後一次仍不符合時保留條目並寫入警告，不會被排除。設計理由見 [ADR 0005](docs/adr/0005-output-language-enforced-by-code.md)。
+
+### 參考資料（Reference Document）
+
+需求文件常附帶資料庫 schema、API 手冊這類參考資料。直接混在一起讀，模型會把參考資料的整份內容都當成需求擷取。把它們放進指定目錄下的 `references/` 子目錄即可：
+
+```
+spec/
+├── req.md                 # 需求文件
+└── references/            # 底下所有文件（含子目錄）都是參考資料
+    ├── api-manual.md
+    └── schema/tbl_device.md
+```
+
+不方便搬移檔案時，也可以用 `--reference` 另外指定，會與 `references/` 合併：
+
+```sh
+pnpm dev extract spec/ --reference "schema/**" "api-manual.md"
+```
+
+被標記的檔案只擷取需求文件用得到的部分（用到的資料表、欄位、端點、規則），不會自己產生 Actor 或 Feature。至少要有一份未標記的需求文件。參考資料太多、分成多批時，每一批都會附上需求文件供判斷相關性；需求文件本身超過預算的一半時無法附上，執行時會出現警告。設計理由見 [ADR 0004](docs/adr/0004-reference-documents.md)。
 
 每次執行的產出放在 `./.x-plan/runs/<run-id>/`：
 
@@ -60,11 +92,11 @@ XPLAN_API_KEY=... pnpm eval --cases glossary-split --repeat 5  # 指定案例、
 ```
 
 報告寫在 `eval/results/<時間>/report.md`，內容包含：
-- 召回率、矛盾偵測率、Rejected 數、重試次數、token 用量
+- 召回率、矛盾偵測率、雜訊命中率、條目數、Rejected 數、重試次數、token 用量
 - **resolvedQuestions 評估**：用同一次輸出比較「套用」與「不套用」的差別，統計「正確移除 / 誤刪真問題 / 待人工判斷 / 漏解 / 未被提出」
 - 報告會記錄 prompt 的 hash，方便比較不同版本的 prompt
 
-每個案例是一個目錄，內含 `docs/` 和 `expected.yaml`。條目用關鍵字比對，不用 id（id 是模型產生的）。`packing: per-file` 會強制每個檔案各自一批。
+每個案例是一個目錄，內含 `docs/` 和 `expected.yaml`。條目用關鍵字比對，不用 id（id 是模型產生的）。`packing: per-file` 會強制每個檔案各自一批；`language` 指定輸出語言（預設 `en`），標註的關鍵字要用同一種語言；參考資料放在 `docs/references/`，或用 `reference` 列出 glob；`unexpected` 列出不該出現在 Brief 的內容，用來量測雜訊（召回率只看有沒有抓到，看不出抓了多少無關的東西）。
 
 ## 開發
 

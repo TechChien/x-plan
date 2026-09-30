@@ -9,11 +9,20 @@ export interface Segment {
   tokens: number;
   /** Set when a file had to be split: this segment's position among the file's parts. */
   part?: { index: number; total: number };
+  /** Set for a Reference Document: supporting material, extracted only where the requirement documents need it. */
+  reference?: true;
 }
 
 export interface Bin {
   index: number;
+  /** What this bin's agent extracts from and may cite. */
   segments: Segment[];
+  /**
+   * Requirement documents extracted in another bin, shown again only so the agent can judge which reference
+   * content is relevant. Never extracted from or cited in this bin.
+   */
+  context?: Segment[];
+  /** Includes the context. */
   tokens: number;
 }
 
@@ -54,13 +63,31 @@ function lineCost(line: string): number {
  */
 export type Packing = "auto" | "per-file";
 
-export function packBins(sources: SourceText[], budget: number, packing: Packing = "auto"): Bin[] {
-  if (packing === "per-file") {
-    return sources
-      .flatMap((s) => splitSource(s, budget))
-      .map((seg, i) => ({ index: i + 1, segments: [seg], tokens: seg.tokens }));
+/**
+ * `reference` holds the paths of Reference Documents. Every bin holding reference segments also sees the
+ * requirement documents: "auto" puts them in the first bin, and every other such bin shows them as `context`.
+ * When the requirement documents take more than half the budget they are not repeated; references are then
+ * packed like any other document, and the caller should warn.
+ */
+export function packBins(sources: SourceText[], budget: number, packing: Packing = "auto", reference: ReadonlySet<string> = new Set()): Bin[] {
+  const split = (s: SourceText, b: number) => splitSource(s, b).map((seg) => (reference.has(s.path) ? { ...seg, reference: true as const } : seg));
+  const requirements = sources.filter((s) => !reference.has(s.path)).flatMap((s) => split(s, budget));
+  const contextTokens = requirements.reduce((sum, s) => sum + s.tokens, 0);
+  const references = sources.filter((s) => reference.has(s.path));
+  if (!references.length || !requirements.length || contextTokens > budget / 2) {
+    return packSegments(sources.flatMap((s) => split(s, budget)), budget, packing);
   }
-  const segments = sources.flatMap((s) => splitSource(s, budget));
+
+  const refBins = packSegments(references.flatMap((s) => split(s, budget - contextTokens)), budget - contextTokens, packing);
+  const withContext = (bin: Bin): Bin => ({ ...bin, context: requirements, tokens: bin.tokens + contextTokens });
+  if (packing === "per-file") return renumber([...packSegments(requirements, budget, packing), ...refBins.map(withContext)]);
+  const [first, ...rest] = refBins as [Bin, ...Bin[]];
+  const owner = { ...first, segments: [...requirements, ...first.segments].sort(bySource), tokens: first.tokens + contextTokens };
+  return renumber([owner, ...rest.map(withContext)]);
+}
+
+function packSegments(segments: Segment[], budget: number, packing: Packing): Bin[] {
+  if (packing === "per-file") return segments.map((seg, i) => ({ index: i + 1, segments: [seg], tokens: seg.tokens }));
   const sorted = [...segments].sort((a, b) => b.tokens - a.tokens || a.path.localeCompare(b.path));
   const bins: Bin[] = [];
   for (const seg of sorted) {
@@ -72,10 +99,17 @@ export function packBins(sources: SourceText[], budget: number, packing: Packing
       bins.push({ index: bins.length + 1, segments: [seg], tokens: seg.tokens });
     }
   }
-  for (const bin of bins) {
-    bin.segments.sort((a, b) => a.path.localeCompare(b.path) || a.lineStart - b.lineStart);
-  }
+  for (const bin of bins) bin.segments.sort(bySource);
   return bins;
+}
+
+/** Requirement documents first, then by path and position. */
+function bySource(a: Segment, b: Segment): number {
+  return Number(Boolean(a.reference)) - Number(Boolean(b.reference)) || a.path.localeCompare(b.path) || a.lineStart - b.lineStart;
+}
+
+function renumber(bins: Bin[]): Bin[] {
+  return bins.map((bin, i) => ({ ...bin, index: i + 1 }));
 }
 
 /** Keeps a file whole when it fits; otherwise splits at Markdown headings, falling back to overlapping line windows. */

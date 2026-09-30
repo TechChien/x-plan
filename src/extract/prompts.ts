@@ -2,6 +2,7 @@ import { stringify } from "yaml";
 import type { PromptLibrary } from "../prompts/template.ts";
 import type { Bin, Segment } from "../source/binning.ts";
 import { ITEM_SECTIONS } from "./merge.ts";
+import { LANGUAGE_NAMES, type OutputLanguage } from "./language.ts";
 import type { Evidence, FactSectionName, Facts } from "./schema.ts";
 import { itemsOf } from "./validate.ts";
 
@@ -17,12 +18,26 @@ export function sectionDefinitions(lib: PromptLibrary, sections: readonly string
   return sections.map((s) => lib.read(`shared/sections/${s}`).trim()).join("\n\n");
 }
 
-/** Identical for every bin of a Run, so the provider can reuse its prefix cache across Facts agents. */
-export function buildFactsSystemPrompt(lib: PromptLibrary, sections: FactSectionName[]): string {
-  return lib.render("extract/facts.system", { sectionDefinitions: sectionDefinitions(lib, sections) });
+export interface RunPromptOptions {
+  /** Whether the Run has any Reference Document. */
+  hasReferences?: boolean;
+  /** Default "en". */
+  language?: OutputLanguage;
 }
 
-export interface FactsPromptInput {
+/**
+ * Identical for every bin of a Run, so the provider can reuse its prefix cache across Facts agents.
+ * The reference rules appear only in Runs with Reference Documents, so other Runs keep their prompt unchanged.
+ */
+export function buildFactsSystemPrompt(lib: PromptLibrary, sections: FactSectionName[], opts: RunPromptOptions = {}): string {
+  return lib.render("extract/facts.system", {
+    sectionDefinitions: sectionDefinitions(lib, sections),
+    referenceRules: opts.hasReferences ? optionalBlock(lib.render("extract/facts.reference", {})) : "",
+    outputLanguage: LANGUAGE_NAMES[opts.language ?? "en"],
+  });
+}
+
+export interface FactsPromptInput extends RunPromptOptions {
   bin: Bin;
   totalBins: number;
   /** Every Source Document path in the Run. */
@@ -32,16 +47,21 @@ export interface FactsPromptInput {
 
 export function buildFactsPrompt(lib: PromptLibrary, input: FactsPromptInput): BuiltPrompt {
   return {
-    systemPrompt: buildFactsSystemPrompt(lib, input.sections),
+    systemPrompt: buildFactsSystemPrompt(lib, input.sections, input),
     userMessage: lib.render("extract/facts.user", {
       binInfo: formatBinInfo(input.bin, input.totalBins, input.allFiles),
-      documents: formatDocuments(input.bin.segments),
+      documents: formatDocuments(input.bin.segments, input.bin.context),
     }),
   };
 }
 
+/** A block placed on its own line between paragraphs; an empty value leaves the template text as it was. */
+function optionalBlock(text: string): string {
+  return `\n${text.trim()}\n`;
+}
+
 export function formatBinInfo(bin: Bin, totalBins: number, allFiles: string[]): string {
-  const seen = new Set(bin.segments.map((s) => s.path));
+  const seen = new Set([...bin.segments, ...(bin.context ?? [])].map((s) => s.path));
   const partial = bin.segments.filter((s) => s.part);
   const lines: string[] = [];
   if (totalBins === 1 && partial.length === 0) {
@@ -55,22 +75,32 @@ export function formatBinInfo(bin: Bin, totalBins: number, allFiles: string[]): 
     }
     lines.push(`Do NOT raise open questions about information that may be in documents or parts you cannot see.`);
   }
+  if (bin.context?.length) {
+    lines.push(`Documents with role="context" are extracted in another batch: use them only to judge relevance. Never extract from them or cite them.`);
+  }
   return lines.join("\n");
 }
 
-export function formatDocuments(segments: Segment[]): string {
-  return segments
-    .map((s) => {
-      const part = s.part ? ` part="${s.part.index}/${s.part.total}"` : "";
-      const body = s.lines.map((line, i) => `L${s.lineStart + i}: ${line}`).join("\n");
-      return `<document path="${s.path}"${part}>\n${body}\n</document>`;
-    })
-    .join("\n\n");
+/** Context first, then the bin's own segments. Requirement documents carry no role attribute. */
+export function formatDocuments(segments: Segment[], context: Segment[] = []): string {
+  const format = (s: Segment, role?: "context" | "reference") => {
+    const part = s.part ? ` part="${s.part.index}/${s.part.total}"` : "";
+    const roleAttr = role ? ` role="${role}"` : "";
+    const body = s.lines.map((line, i) => `L${s.lineStart + i}: ${line}`).join("\n");
+    return `<document path="${s.path}"${part}${roleAttr}>\n${body}\n</document>`;
+  };
+  return [...context.map((s) => format(s, "context")), ...segments.map((s) => format(s, s.reference ? "reference" : undefined))].join("\n\n");
 }
 
-export function buildAnalysisPrompt(lib: PromptLibrary, facts: Facts): BuiltPrompt {
+export function buildAnalysisPrompt(lib: PromptLibrary, facts: Facts, referenceFiles: string[] = [], language: OutputLanguage = "en"): BuiltPrompt {
+  const files = referenceFiles.map((f) => `\`${f}\``).join(", ");
+  const referenceRules = referenceFiles.length ? optionalBlock(lib.render("extract/analysis.reference", { files })) : "";
   return {
-    systemPrompt: lib.render("extract/analysis.system", { sectionDefinitions: sectionDefinitions(lib, ANALYSIS_SECTIONS) }),
+    systemPrompt: lib.render("extract/analysis.system", {
+      sectionDefinitions: sectionDefinitions(lib, ANALYSIS_SECTIONS),
+      referenceRules,
+      outputLanguage: LANGUAGE_NAMES[language],
+    }),
     userMessage: lib.render("extract/analysis.user", { facts: factsToYaml(facts) }),
   };
 }

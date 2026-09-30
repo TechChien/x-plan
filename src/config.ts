@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
+import { OUTPUT_LANGUAGES } from "./extract/language.ts";
 
 /** Sent as-is as `reasoning_effort`; which values are accepted depends on the served model. */
 export const ThinkingLevelSchema = Type.Union([Type.Literal("low"), Type.Literal("medium"), Type.Literal("high"), Type.Literal("xhigh")]);
@@ -30,6 +31,8 @@ export const ConfigSchema = Type.Object({
   ),
   concurrency: Type.Optional(Type.Integer({ minimum: 1 })),
   promptsDir: Type.Optional(Type.String()),
+  /** Language of everything x-plan writes: en (default), zh (Traditional Chinese), cn (Simplified Chinese). */
+  outputLanguage: Type.Optional(Type.Union(OUTPUT_LANGUAGES.map((l) => Type.Literal(l)))),
 });
 export type XPlanConfig = Static<typeof ConfigSchema>;
 

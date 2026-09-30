@@ -3,3 +3,7 @@ dist/
 .x-plan/
 x-plan.config.json
 eval/results/
+
+# Internal real-world data: local only
+spec_to_test/
+eval/cases/cpe-inventory/

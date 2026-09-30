@@ -31,8 +31,8 @@ Call \`submit_analysis\` once with five arrays: \`merges\`, \`resolvedQuestions\
 - \`resolvedQuestions\`: \`{ questionId, answeredByIds, reason }\`.
 
 ### Language
-- Write every field in the language of the source documents. If the documents are in Chinese, write in Chinese.
-- Never translate names, terms or quotes.
+- Write every field in English, whatever language the source documents are written in. The examples in these instructions only show structure; their language never decides yours.
+- Keep quotes, identifiers (table, column, field, endpoint and file names) and glossary \`term\` / \`aliases\` exactly as the documents write them. Translate everything else, including names.
 
 ### Sections
 
@@ -129,8 +129,8 @@ Call \`submit_facts\` once, with one array for each section below plus \`openQue
 - Omit optional fields the documents do not state. Never write placeholders such as "N/A", "unknown", "未提及".
 
 ### Language
-- Write every field in the language of the source documents. If the documents are in Chinese, write in Chinese.
-- Never translate names, terms or quotes.
+- Write every field in English, whatever language the source documents are written in. The examples in these instructions only show structure; their language never decides yours.
+- Keep quotes, identifiers (table, column, field, endpoint and file names) and glossary \`term\` / \`aliases\` exactly as the documents write them. Translate everything else, including names.
 
 ### Evidence rules
 - \`file\` is the path exactly as written in \`<document path="...">\`.

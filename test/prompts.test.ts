@@ -89,6 +89,45 @@ describe("buildFactsPrompt", () => {
   });
 });
 
+describe("Reference Documents in prompts", () => {
+  const withRef = [...sources, { path: "docs/schema.md", converted: false, text: "# tbl_order\n| OrderId | varchar |" }];
+  const reference = new Set(["docs/schema.md"]);
+  const allFiles = withRef.map((s) => s.path);
+
+  test("the reference rules appear only in Runs with Reference Documents", () => {
+    expect(buildFactsSystemPrompt(lib(), FACT_SECTION_NAMES)).not.toContain("### Reference documents");
+    const system = buildFactsSystemPrompt(lib(), FACT_SECTION_NAMES, { hasReferences: true });
+    expect(system).toContain("### Reference documents");
+    expect(headings(system)).toEqual(SIX_SECTIONS);
+  });
+
+  test("reference documents carry role=reference; requirement documents carry no role", () => {
+    const bins = packBins(withRef, 100_000, "auto", reference);
+    const { userMessage } = buildFactsPrompt(lib(), { bin: bins[0]!, totalBins: 1, allFiles, sections: ["actors"], hasReferences: true });
+    expect(userMessage).toContain('<document path="docs/prd.md">');
+    expect(userMessage).toContain('<document path="docs/schema.md" role="reference">');
+    expect(userMessage.indexOf("docs/prd.md")).toBeLessThan(userMessage.indexOf("docs/schema.md"));
+  });
+
+  test("a reference batch shows the requirement documents as context, first", () => {
+    const bins = packBins(withRef, 100_000, "per-file", reference);
+    const refBin = bins.find((b) => b.context)!;
+    const { userMessage } = buildFactsPrompt(lib(), { bin: refBin, totalBins: bins.length, allFiles, sections: ["actors"], hasReferences: true });
+    expect(userMessage).toContain('<document path="docs/faq.md" role="context">');
+    expect(userMessage).toContain('role="context" are extracted in another batch');
+    expect(userMessage).not.toContain("Documents you cannot see");
+    expect(userMessage.indexOf('role="context"')).toBeLessThan(userMessage.indexOf('role="reference"'));
+  });
+
+  test("the analysis prompt names the reference files only when there are any", () => {
+    const facts = emptyFacts();
+    expect(buildAnalysisPrompt(lib(), facts).systemPrompt).not.toContain("### Reference documents");
+    const { systemPrompt } = buildAnalysisPrompt(lib(), facts, ["docs/schema.md"]);
+    expect(systemPrompt).toContain("not requirements: `docs/schema.md`.");
+    expect(headings(systemPrompt)).toEqual(SIX_SECTIONS);
+  });
+});
+
 describe("buildAnalysisPrompt", () => {
   test("snapshot: facts as YAML with file and quote, without line numbers", () => {
     const facts = {
