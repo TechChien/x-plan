@@ -128,19 +128,34 @@ Clarify Run 的產出：
 - config 設定 `"telemetry": { "enabled": true }`
 - 環境中有標準的 `OTEL_EXPORTER_OTLP_ENDPOINT` 或 `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`（`OTEL_EXPORTER_OTLP_HEADERS` 等標準變數照常適用）
 
-`OTEL_SDK_DISABLED=true` 一律關閉，`"enabled": false` 優先於環境變數。送到 Langfuse 最簡單的設定：
+`OTEL_SDK_DISABLED=true` 一律關閉，`"enabled": false` 優先於環境變數。
+
+[x-plan.config.example.json](x-plan.config.example.json) 附有這兩個區塊，tracing 預設關閉：
 
 ```json
-"telemetry": { "enabled": true },
-"langfuse":  { "baseUrl": "http://localhost:3000" }
+"telemetry": { "enabled": false, "captureContent": false },
+"langfuse": {
+  "baseUrl": "http://localhost:3000",
+  "publicKeyEnv": "LANGFUSE_PUBLIC_KEY",
+  "secretKeyEnv": "LANGFUSE_SECRET_KEY"
+}
 ```
 
+| 設定 | 意思 |
+|---|---|
+| `telemetry.enabled` | `true` 開啟、`false` 關閉（連環境變數也擋掉）；整行拿掉時，由 `OTEL_EXPORTER_OTLP_*` 環境變數決定 |
+| `telemetry.captureContent` | 是否連 prompt、CoT、tool 參數、Clarify 的回答一起送（見下方） |
+| `langfuse.baseUrl` | Langfuse 的位址：沒有 OTLP endpoint 變數時，trace 送到這裡；Feedback 也同步到這裡 |
+| `langfuse.publicKeyEnv` / `secretKeyEnv` | 存放金鑰的**環境變數名稱**；金鑰本身只從環境變數讀取 |
+
+送到 Langfuse：把 `enabled` 改成 `true`，再設定金鑰：
+
 ```sh
-export LANGFUSE_PUBLIC_KEY=pk-lf-...   # 金鑰只從環境變數讀取；變數名稱可用 publicKeyEnv / secretKeyEnv 改
+export LANGFUSE_PUBLIC_KEY=pk-lf-...
 export LANGFUSE_SECRET_KEY=sk-lf-...
 ```
 
-沒有設定 OTLP endpoint 變數時，endpoint 與認證會從 `langfuse` 區塊推導出來。
+沒有設定 OTLP endpoint 變數時，endpoint 與認證會從 `langfuse` 區塊推導出來。改送其他 OTLP backend 時，設定 `OTEL_EXPORTER_OTLP_ENDPOINT`（環境變數優先於 `langfuse` 區塊）。不使用 Langfuse 就刪掉 `langfuse` 區塊；保留它但沒設金鑰時，每次記錄 Feedback 都會出現「未同步」的警告。
 
 - **預設不送內容**：span 只帶 token、時間、狀態、id、重試次數。要連 prompt、CoT、tool 參數與 Clarify 的回答一起送，設定 `"captureContent": true`。需求文件若屬機密，請先確認 backend 的存取權限。
 - 每次執行程序是一條 trace，以 Run id 作為 session 串起來；續跑的 Clarify 與上游 Extract 以 span link 連接。

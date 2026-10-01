@@ -8,5 +8,11 @@
   },
   "thinking": "medium",
   "stages": { "extract": { "thinking": "high" } },
-  "concurrency": 2
+  "concurrency": 2,
+  "telemetry": { "enabled": false, "captureContent": false },
+  "langfuse": {
+    "baseUrl": "http://localhost:3000",
+    "publicKeyEnv": "LANGFUSE_PUBLIC_KEY",
+    "secretKeyEnv": "LANGFUSE_SECRET_KEY"
+  }
 }
