@@ -86,16 +86,26 @@ describe("checkConflicts", () => {
       accepted: accepted({
         decisions: [
           dec("DEC-1", "R1/CTR-1", ["CTR-1"], { conclusion: "取消期限為下單後 7 天", supersedes: ["BR-1"] }),
-          dec("DEC-2", "R1/CTR-1", ["CTR-1"], { conclusion: "VIP 會員可於下單後 14 天內取消" }),
+          dec("DEC-2", "R1/CTR-1", ["CTR-1"], { conclusion: "VIP 會員可於下單後 14 天內取消", relatedIds: ["BR-2"] }),
         ],
       }),
       ordering: "t",
     });
-    const result = checkConflicts(returnsBrief(), state, { conflicts: [conflict(["DEC-1", "DEC-2"]), conflict(["DEC-2", "BR-2"])] }, ctx);
+    const result = checkConflicts(
+      returnsBrief(),
+      state,
+      { conflicts: [conflict(["DEC-1", "DEC-2"]), conflict(["DEC-1", "DEC-2", "BR-2"]), conflict(["DEC-1", "DEC-2", "FEAT-1"]), conflict(["DEC-2", "BR-2"])] },
+      ctx,
+    );
     expect(result.issues).toEqual([
-      { path: "conflicts[0]", errors: ["all of DEC-1, DEC-2 come from the same Answer R1/CTR-1: they are one statement of the user, read together"] },
+      { path: "conflicts[0]", errors: ["DEC-1, DEC-2 come from the same Answer R1/CTR-1: they are one statement of the user, read together"] },
+      { path: "conflicts[1]", errors: ["DEC-1, DEC-2 come from the same Answer R1/CTR-1, which is about BR-2: they are one statement of the user, read together"] },
     ]);
-    expect(result.accepted.map((c) => c.ids)).toEqual([["DEC-2", "BR-2"]]);
+    // FEAT-1 is a fact the Answer did not speak about; one Decision against a fact is checked by the prompt, not here.
+    expect(result.accepted.map((c) => c.ids)).toEqual([
+      ["DEC-1", "DEC-2", "FEAT-1"],
+      ["DEC-2", "BR-2"],
+    ]);
   });
 
   test("a conflict already raised is not raised again; text in the wrong language is kept with a warning, never retried", () => {

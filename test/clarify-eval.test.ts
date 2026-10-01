@@ -134,6 +134,15 @@ describe("LabelAnswerer", () => {
     ]);
   });
 
+  test("a follow-up reply is given once; a later follow-up of the same label is answered as unmatched", async () => {
+    const { recorded } = await ask([
+      q("OQ-3"),
+      q("FQ-1", { kind: "FQ", origin: "follow-up", parentId: "OQ-3", question: "從哪一天起算？" }),
+      q("FQ-2", { kind: "FQ", origin: "follow-up", parentId: "FQ-1", question: "起算後是日曆天還是工作天？" }),
+    ]);
+    expect(recorded.map((r) => (r as { kind: string }).kind)).toEqual(["text", "text", "na"]);
+  });
+
   test("a conflict question is answered by the conflict label its question matches, once; any other is unmatched", async () => {
     const { recorded, log } = await ask([
       q("FQ-7", { kind: "FQ", origin: "conflict", question: "DEC-4 與 DEC-7 的退貨運費規定不一致，以哪一個為準？" }),

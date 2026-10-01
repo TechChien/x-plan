@@ -29,6 +29,8 @@ export class LabelAnswerer implements Answerer {
   /** Gap labels already used: each answers one gap question, so a broad relatedIds match cannot hand the same reply to every related gap. */
   private readonly usedGaps = new Set<string>();
   private readonly usedConflicts = new Set<string>();
+  /** Labels whose follow-up reply was given: it answers one follow-up, not every later one that shares a keyword. */
+  private readonly usedFollowUps = new Set<string>();
   private readonly script: ScriptAnswerer;
 
   constructor(private readonly labels: ClarifyCase) {
@@ -56,8 +58,10 @@ export class LabelAnswerer implements Answerer {
       const label = this.labels.answers.find((a) => a.id === parentLabel)!;
       this.owner.set(q.id, label.id);
       Object.assign(entry, { role: "followUp", label: label.id });
-      const fit = label.followUpReply && label.followUpReply.any.some((k) => has(q.question, k));
-      return fit ? label.followUpReply!.reply : unmatched;
+      const fit = !this.usedFollowUps.has(label.id) && label.followUpReply && label.followUpReply.any.some((k) => has(q.question, k));
+      if (!fit) return unmatched;
+      this.usedFollowUps.add(label.id);
+      return label.followUpReply!.reply;
     }
     if (q.origin === "conflict") {
       const conflict = (this.labels.conflicts ?? []).find((c) => !this.usedConflicts.has(c.id) && c.any.some((k) => has(q.question, k)));

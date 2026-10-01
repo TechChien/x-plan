@@ -98,9 +98,21 @@ export function checkConflicts(
         if (d.supersedes.includes(other)) errors.push(`${id} already supersedes ${other}: that is a correction, not a conflict`);
       }
     }
+    // Decisions from one Answer are one statement of the user; the facts they name are what that statement is about.
     const decisionsHere = c.ids.map((id) => state.decisions.find((d) => d.id === id)).filter((d) => d !== undefined);
-    if (decisionsHere.length === c.ids.length && new Set(decisionsHere.map((d) => d.answerRef)).size === 1) {
-      errors.push(`all of ${c.ids.join(", ")} come from the same Answer ${decisionsHere[0]!.answerRef}: they are one statement of the user, read together`);
+    const named = new Set(decisionsHere.flatMap((d) => [...d.relatedIds, ...d.supersedes]));
+    const factsHere = c.ids.filter((id) => facts.has(id));
+    if (
+      decisionsHere.length >= 2 &&
+      decisionsHere.length + factsHere.length === c.ids.length &&
+      new Set(decisionsHere.map((d) => d.answerRef)).size === 1 &&
+      factsHere.every((id) => named.has(id))
+    ) {
+      errors.push(
+        `${decisionsHere.map((d) => d.id).join(", ")} come from the same Answer ${decisionsHere[0]!.answerRef}` +
+          (factsHere.length ? `, which is about ${factsHere.join(", ")}` : "") +
+          ": they are one statement of the user, read together",
+      );
     }
     const k = key(c.ids);
     const before = asked.find((a) => a.key === k);
