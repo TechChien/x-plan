@@ -124,7 +124,154 @@ x-plan feedback <run> --sync
 - Score id 由 Run id 與 FB id 決定，重送是冪等的。條目用 categorical `item-verdict`，missing 用 categorical `missing`，總分用 numeric `run-score`。
 - 走 REST API（`POST /api/public/scores`、`DELETE /api/public/scores/{id}`），以 `fetch` 實作，放在可替換的 `ScoreSink` 介面後面。
 
-## 4. Commit 順序
+## 4. 測試步驟
+
+### 4.1 自動測試
+
+```sh
+pnpm test        # 不需要 API key、網路或 Docker
+pnpm typecheck
+```
+
+| 測試檔 | 涵蓋 |
+|---|---|
+| `test/provenance.test.ts` | 單一 bin、exact-name dedup、Analysis merge、Analysis 新增的條目各自的來源 |
+| `test/telemetry-setup.test.ts` | 啟用條件與 endpoint 推導、span 巢狀、shutdown 後可重新註冊、中斷、匯出失敗只警告一次 |
+| `test/telemetry-off.test.ts` | 關閉時完全不載入 SDK 與 exporter |
+| `test/telemetry-agent.test.ts` | `invoke_agent` / `chat` / `execute_tool` 的結構與屬性、預設不含內容、`captureContent`、check 內的 agent 掛在 tool span 下 |
+| `test/extract.e2e.test.ts`、`test/clarify.e2e.test.ts`（with telemetry） | Stage 的 span 樹、`run.json` 的 `telemetry` 與 `provenance`、`await_user`、續跑的 span link |
+| `test/feedback.test.ts` | verdict 規則、supersede、retract、`--at` 對應 bin、Clarify Run 的限制、參數解析 |
+| `test/feedback-sync.test.ts` | score 的內容、增量同步與刪除、失敗後續傳、未 trace 的評價留在本機、Langfuse API 呼叫 |
+| `test/config-example.test.ts` | 範例 config 合法，照抄後 tracing 是關閉的 |
+
+### 4.2 啟動本機 Langfuse
+
+前置：Docker Desktop 的 engine 已啟動（`docker info --format "{{.ServerVersion}}"` 印得出版本號）。
+
+```sh
+git clone https://github.com/langfuse/langfuse.git ~/langfuse
+cd ~/langfuse
+```
+
+在 `~/langfuse/.env` 寫入以下內容。第一次啟動時會自動建好帳號、專案與 API key，不需要進 UI 設定。這些帳密只用於本機開發。
+
+```
+LANGFUSE_INIT_ORG_ID=xplan-org
+LANGFUSE_INIT_ORG_NAME=x-plan local
+LANGFUSE_INIT_PROJECT_ID=xplan-local
+LANGFUSE_INIT_PROJECT_NAME=x-plan local
+LANGFUSE_INIT_PROJECT_PUBLIC_KEY=pk-lf-xplan-local
+LANGFUSE_INIT_PROJECT_SECRET_KEY=sk-lf-xplan-local
+LANGFUSE_INIT_USER_EMAIL=dev@example.com
+LANGFUSE_INIT_USER_NAME=dev
+LANGFUSE_INIT_USER_PASSWORD=xplan-local-dev
+```
+
+```sh
+docker compose up -d
+docker compose logs -f langfuse-web     # 出現 Ready 後 Ctrl+C
+```
+
+打開 http://localhost:3000，以 `dev@example.com` / `xplan-local-dev` 登入，進入專案「x-plan local」。
+
+### 4.3 設定 x-plan
+
+`x-plan.config.json`（從範例複製，填好 provider）：
+
+```json
+"telemetry": { "enabled": true, "captureContent": false },
+"langfuse": { "baseUrl": "http://localhost:3000", "publicKeyEnv": "LANGFUSE_PUBLIC_KEY", "secretKeyEnv": "LANGFUSE_SECRET_KEY" }
+```
+
+```powershell
+# PowerShell
+$env:XPLAN_API_KEY = "..."
+$env:LANGFUSE_PUBLIC_KEY = "pk-lf-xplan-local"
+$env:LANGFUSE_SECRET_KEY = "sk-lf-xplan-local"
+```
+
+```sh
+# bash
+export XPLAN_API_KEY=... LANGFUSE_PUBLIC_KEY=pk-lf-xplan-local LANGFUSE_SECRET_KEY=sk-lf-xplan-local
+```
+
+### 4.4 實機檢查清單
+
+每一項都寫出操作與預期結果。Langfuse 介面中的位置：**Tracing**（trace 列表與 span 樹）、**Sessions**（同一個 Run 的所有 trace）、trace 頁的 **Scores**。
+
+**A. 連線**
+
+| 操作 | 預期 |
+|---|---|
+| `pnpm smoke` | 輸出開頭有 `Tracing to http://localhost:3000/api/public/otel/v1/traces`，最後有 `Trace sent: <id>`；Langfuse 出現 `x-plan smoke` trace，底下有 `chat <model>` 與 `execute_tool submit_answer` |
+
+**B. Extract**
+
+| 操作 | 預期 |
+|---|---|
+| `pnpm dev extract <目錄>` | Langfuse 出現 `x-plan extract` trace，Session 是這個 Run 的 id |
+| 展開 trace | root 底下依序是 `extract.prepare`、每個 bin 的 `invoke_agent facts-bin<k>`、`extract.merge`、`invoke_agent analysis` |
+| 展開 `invoke_agent facts-bin1` | 每次模型回應各一個 `chat <model>`（generation，有 input/output token 數），每次交卷各一個 `execute_tool submit_facts`；被退回的那次是錯誤狀態 |
+| 看 `invoke_agent` 的屬性 | `xplan.outcome`、`xplan.submit_attempts`、`xplan.usage.*` |
+| 打開 Run 目錄的 `run.json` | 有 `telemetry.traces[0]`（traceId 與 Langfuse 上的一致，`spans` 列出每個 task）和 `provenance` |
+| 檔案 trace | `traces/*.jsonl`、`*.md` 照常寫出，內容與未啟用時相同 |
+
+**C. 內容是否外送**
+
+| 操作 | 預期 |
+|---|---|
+| `captureContent: false` 跑一次 Extract | span 上沒有 prompt、CoT、tool 參數；被退回的 `execute_tool` 的錯誤訊息只寫 `submission rejected` |
+| 改成 `true` 再跑一次 | `invoke_agent` 有 `gen_ai.system_instructions`、`gen_ai.input.messages`；`chat` 有 `gen_ai.output.messages`（含 reasoning）；`execute_tool` 有參數與結果 |
+| 同上，看 Langfuse 的 Input / Output 欄位 | 記下 Langfuse 是否把 `gen_ai.*` 內容顯示在 Input / Output。沒有顯示的話，是 Langfuse 對 GenAI 屬性的對應問題，需要另外決定是否加上 Langfuse 專屬屬性 |
+
+**D. Clarify**
+
+| 操作 | 預期 |
+|---|---|
+| `pnpm dev clarify <extract-run-id>`，回答幾題後 `/done` | `x-plan clarify` trace，有一條 span link 指向 Extract 的 trace（`xplan.link=upstream`） |
+| 展開 trace | 每個 Round 一個 `clarify.round`，裡面有 `invoke_agent clarify-r<n>`、`clarify-r<n>-consistency`；Grounding Review 的 `invoke_agent clarify-r<n>-review<k>` 掛在 `execute_tool submit_round` 底下 |
+| 看 `clarify.await_user` | `xplan.await_user=true`，事件列出每則輸入的題號與種類；`captureContent: false` 時沒有回答原文 |
+| 回答到一半關掉終端機，再以 Clarify Run id 續跑 | 同一個 Session 下出現第二條 trace，有 `xplan.link=resumes` 指向第一條；`run.json` 的 `telemetry.traces` 有兩筆 |
+| 模型思考時按 Ctrl+C | 程序以 130 結束；Langfuse 上仍開著的 span 標有 `xplan.interrupted=true` |
+
+**E. Feedback**
+
+以 B 的 Extract Run 為對象，`<run>` 是它的 id。
+
+| 操作 | 預期 |
+|---|---|
+| `pnpm dev feedback <run> BR-1 --wrong "以 7 天為準"` | 印出 `Recorded FB-1` 與 `Langfuse: sent FB-1`；trace 的 Scores 出現 `item-verdict = wrong`，掛在產出 BR-1 的 `invoke_agent facts-bin<k>` 上 |
+| 對一個由多個 bin 合併的條目下 verdict（查 `run.json` 的 `provenance`，`evidence` 有兩個以上） | score 掛在 `text` 那個 bin，comment 有 `Also from: …` |
+| `pnpm dev feedback <run> --missing "VIP 免運" --at prd.md:57` | `missing` score 掛在讀取 prd.md 第 57 行的 bin |
+| `pnpm dev feedback <run> --score 4 --note "不錯"` | trace 層級的 `run-score = 4`（不掛在 span 上） |
+| 再下一次 `pnpm dev feedback <run> BR-1 --ok` | 印出 `replacing FB-1`；Langfuse 上 FB-1 的 score 被刪除，換成 `ok` |
+| `pnpm dev feedback <run> --retract FB-2` | 那筆 missing score 從 Langfuse 消失 |
+| `pnpm dev feedback <run> --list` | 只列出仍有效的評價，狀態為 `synced` |
+| 查看 `feedback.jsonl` | 每個操作都是新的一行，舊的行沒有被修改 |
+
+**F. 失敗情境**
+
+| 操作 | 預期 |
+|---|---|
+| `docker compose stop langfuse-web` 後跑 Extract | Run 正常完成，只印一次 `warning: could not export spans …` |
+| 同上，記錄一筆 feedback | 寫入本機並印警告；`--list` 顯示 `not synced`；重新啟動 Langfuse 後 `--sync` 送出 |
+| 不設 `LANGFUSE_SECRET_KEY` 跑 Extract | `warning: tracing is off: … LANGFUSE_SECRET_KEY is not set`，Run 正常完成 |
+| 設 `OTEL_SDK_DISABLED=true` 跑 Extract | 沒有 trace，`run.json` 沒有 `telemetry` |
+| `telemetry.enabled: false` 時評價那個 Run | 寫入本機，`--list` 顯示 `no trace`，不會送出 |
+
+### 4.5 清理
+
+```sh
+cd ~/langfuse
+docker compose down       # 停止，保留資料
+docker compose down -v    # 停止並刪除所有資料
+```
+
+### 4.6 狀態
+
+自動測試全部通過。4.4 的實機檢查尚未執行：開發時本機的 Docker engine 沒有啟動，也沒有可用的模型 API key。Feedback 送出的 score 內容與認證，已經用一個假的 HTTP server 跑過實際的 CLI 確認。
+
+## 5. Commit 順序
 
 1. `feat(extract): record item provenance in run.json`
 2. `feat(telemetry): opt-in OTLP tracer, config and shutdown`
@@ -134,7 +281,7 @@ x-plan feedback <run> --sync
 6. `feat(feedback): Langfuse score sync`
 7. `docs: Feedback term, ADR 0013/0014, README`
 
-## 5. v2（這次不做）
+## 6. v2（這次不做）
 
 - 評價 Rejected Item（「不該被排除」）與 Clarify 的條目（Decision 是否忠實、題目品質、建議答案品質）。
 - `x-plan feedback export`：把 feedback 轉成 `eval/cases/<name>/expected.yaml` 草稿（`wrong` → `unexpected`、missing → `facts`、`redundant` → `shouldNotBeRaised`），關鍵字仍由人挑選。
