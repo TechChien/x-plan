@@ -20,8 +20,15 @@ export interface ClarifyScore {
     unneeded: { label: string; questions: string[] }[];
   };
   gaps: { raised: string[]; missed: string[] };
-  /** Questions no label matched, answered with `unmatchedReply`. */
+  /** Questions no label matched, answered with `unmatchedReply` (conflict questions are counted under `conflicts`). */
   noise: { id: string; question: string }[];
+  conflicts: {
+    /** Conflict labels surfaced as a question, or settled by the interpreter revising the Decision. */
+    handled: string[];
+    missed: string[];
+    /** Conflict questions no label matched. */
+    unneeded: { id: string; question: string }[];
+  };
   /** `goodRecommendation` labels whose first recommendation matched. */
   recommendations: { good: string[]; bad: string[] };
   /** Submissions refused for deciding without an Answer (rules 2 and 3). */
@@ -99,7 +106,8 @@ export function scoreClarify(labels: ClarifyCase, brief: RequirementBrief, state
     wrongSupersedes,
     followUps,
     gaps,
-    noise: log.filter((e) => e.role === "unmatched").map((e) => ({ id: e.questionId, question: e.question })),
+    noise: log.filter((e) => e.role === "unmatched" && e.origin !== "conflict").map((e) => ({ id: e.questionId, question: e.question })),
+    conflicts: scoreConflicts(labels, state, log),
     recommendations,
     selfAnswerBlocked,
     review: countReviews(state),
@@ -113,4 +121,17 @@ function countReviews(state: ClarifyState): ClarifyScore["review"] {
   const records = state.rounds.flatMap((r) => r.reviews ?? []);
   const count = (v: string) => records.filter((r) => r.verdicts.some((x) => x === v)).length;
   return { embellished: count("embellished"), partial: count("partial"), offTopic: count("off-topic") };
+}
+
+function scoreConflicts(labels: ClarifyCase, state: ClarifyState, log: AnswerLogEntry[]): ClarifyScore["conflicts"] {
+  const revised = state.decisions.flatMap((d) => d.revises).map((id) => state.decisions.find((d) => d.id === id)?.conclusion ?? "");
+  const handled: string[] = [];
+  const missed: string[] = [];
+  for (const c of labels.conflicts ?? []) {
+    const asked = log.some((e) => e.role === "conflict" && e.label === c.id);
+    const fixed = revised.some((text) => c.any.some((k) => has(norm(text), k)));
+    (asked || fixed ? handled : missed).push(c.id);
+  }
+  const unneeded = log.filter((e) => e.origin === "conflict" && e.role === "unmatched").map((e) => ({ id: e.questionId, question: e.question }));
+  return { handled, missed, unneeded };
 }

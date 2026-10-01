@@ -121,7 +121,7 @@ _Avoid_: Turn, iteration, pass
 _Avoid_: Reply, response, input
 
 **Follow-up Question**:
-Clarify 過程中新產生的 Agenda Item：可能是某則 Answer 不夠明確而需要的追問，也可能是為了寫出 Gherkin 而發現的缺口。
+Clarify 過程中新產生的 Agenda Item：可能是某則 Answer 不夠明確而需要的追問、為了寫出 Gherkin 而發現的缺口，或 Consistency Check 發現的衝突。
 _Avoid_: Sub-question, clarification
 
 **Decision**:
@@ -131,6 +131,10 @@ _Avoid_: Resolution, conclusion, ruling
 **Grounding Review**:
 Clarify 中，Decision 寫入前的檢查：由另一個 agent 確認 Decision 的每一句話都來自它所依據的 Answer，且 Answer 確實回答了題目；它只挑錯，修正一律由解讀 Answer 的 agent 處理。
 _Avoid_: Hallucination check, verifier, validation
+
+**Consistency Check**:
+Clarify 中，每一 Round 寫入 Decision 之後的檢查：由另一個 agent 比對新的 Decision 與仍有效的 Decision、Brief 事實，找出不能同時成立的組合，交給使用者決定；它不做裁決。
+_Avoid_: Conflict detector, validator, contradiction check
 
 **Aligned Brief**:
 Clarify 的產出：原樣保留的 Requirement Brief，加上全部 Decision 與每個 Agenda Item 的最終狀態，是 Write 唯一的輸入。

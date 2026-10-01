@@ -99,7 +99,7 @@ describe("checkRound", () => {
     [
       "a contradiction closed without saying which side holds",
       (s) => (s.decisions[0]!.supersedes = []),
-      /^decisions\[0\]: resolves CTR-1 but no Decision on it supersedes one side \(BR-1, BR-2\) or names both in relatedIds/,
+      /^decisions\[0\]: resolves CTR-1 but no Decision on it supersedes \(Brief facts\) or revises \(Decisions\) one side \(BR-1, BR-2\), or names every side in relatedIds/,
     ],
     // Rule 6: exactly the assigned items are prepared.
     ["an assigned item left unprepared", (s) => s.prepared.pop(), /^round: prepared is missing OQ-4/],

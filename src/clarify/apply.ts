@@ -1,5 +1,6 @@
 import type { RequirementBrief } from "../extract/schema.ts";
 import { close, createState, item, recordAnswers, settle, type UserInput } from "./agenda.ts";
+import { restoreConflicts } from "./consistency.ts";
 import type { AcceptedRound, AgendaItem, Answer, ClarifyState, Prepared, QuestionView, ReviewRecord } from "./schema.ts";
 
 export interface RoundInput {
@@ -106,6 +107,7 @@ export function replay(brief: RequirementBrief, recorded: ClarifyState): Clarify
       ordering: round.ordering.prepare,
       ...(round.reviews ? { reviews: round.reviews } : {}),
     });
+    if (round.conflicts) state = restoreConflicts(state, round.conflicts);
     if (round.final) continue;
     state = markAsked(state, round.asked.map((q) => q.id), round.ordering.batch);
     for (const answer of recorded.answers.filter((a) => a.round === round.n)) {

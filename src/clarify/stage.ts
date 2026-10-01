@@ -11,6 +11,7 @@ import { readRunMeta, type RunSource } from "../shared/runs.ts";
 import { buildNudge, runTraced, validationFeedback } from "../shared/traced.ts";
 import { close, createState, inputError, item, openItems, recordAnswers, type UserInput } from "./agenda.ts";
 import { buildAligned } from "./aligned.ts";
+import { addConflicts, buildConsistencyPrompt, checkConflicts, conflictSides, newDecisions } from "./consistency.ts";
 import type { AskedQuestion, Answerer } from "./answerer.ts";
 import { applyRound, markAsked } from "./apply.ts";
 import { checkRound, formatRoundIssues, type RoundCheckResult } from "./check.ts";
@@ -21,9 +22,12 @@ import { buildReviewPrompt, judgeReview, reviewErrors, ReviewSubmissionSchema, u
 import {
   awaitsInterpretation,
   CLARIFY_LIMITS,
+  ConsistencySubmissionSchema,
   FinalSubmissionSchema,
   RoundSubmissionSchema,
   type ClarifyState,
+  type ConflictOp,
+  type ConsistencySubmission,
   type FinalSubmission,
   type ReviewRecord,
   type RoundSubmission,
@@ -151,6 +155,7 @@ export async function runClarify(opts: ClarifyOptions): Promise<ClarifyReport> {
   const agents: AgentRecord[] = existing && !opts.restart ? ((existing as { agents?: AgentRecord[] }).agents ?? []) : [];
   const thinking = thinkingFor(config, "clarify");
   const reviewThinking = thinkingForRole(config, "review");
+  const consistencyThinking = thinkingForRole(config, "consistency");
   const traceDir = join(runDir, "traces");
   let backend: AgentBackend | undefined;
   const getBackend = async () => (backend ??= await opts.backend());
@@ -227,6 +232,46 @@ export async function runClarify(opts: ClarifyOptions): Promise<ClarifyReport> {
   };
 
   /**
+   * Consistency Check of the Decisions the latest round wrote (ADR 0012); returns the state with the conflicts on
+   * the Agenda, or the failure message. A round without new Decisions has nothing to check.
+   */
+  const runConsistency = async (label: string, final: boolean): Promise<ClarifyState | string> => {
+    if (!newDecisions(state).length) return state;
+    const prompt = buildConsistencyPrompt(lib, brief, state);
+    savePrompt(runDir, label, prompt);
+    let languageWarnings: string[] = [];
+    const outcome = await runTraced<ConsistencySubmission, ConflictOp[]>(
+      await getBackend(),
+      {
+        label,
+        ...prompt,
+        nudge: buildNudge(lib, "submit_conflicts"),
+        thinking: consistencyThinking,
+        maxSubmitAttempts: MAX_SUBMIT_ATTEMPTS,
+        maxNudges: MAX_NUDGES,
+        tool: {
+          name: "submit_conflicts",
+          description: "Submit the conflicts among the Decisions and Brief facts, or an empty list. Call exactly once; call again with the complete corrected result if errors are returned.",
+          parameters: ConsistencySubmissionSchema,
+          check: (params, { isLast }) => {
+            const result = checkConflicts(brief, state, params, { language: state.outputLanguage, limit: limits.batchSize });
+            const count = result.issues.reduce((n, i) => n + i.errors.length, 0);
+            if (count && !isLast) return { retry: validationFeedback(lib, "submit_conflicts", formatRoundIssues(result.issues), count) };
+            languageWarnings = result.languageWarnings;
+            return { accept: result.accepted };
+          },
+        },
+      },
+      traceDir,
+    );
+    recordAgent(label, outcome);
+    if (outcome.status === "failed") return `${label} failed (${outcome.reason}): ${outcome.message}`;
+    if (languageWarnings.length) warnings.push(`${label}: ${languageWarnings.length} conflict(s) still not written in ${LANGUAGE_NAMES[state.outputLanguage]}, kept: ${languageWarnings.join(", ")}`);
+    if (outcome.value.length) log(`[${label}] ${outcome.value.length} conflict(s) found`);
+    return addConflicts(state, outcome.value, { final, maxDepth: limits.maxFollowUpDepth });
+  };
+
+  /**
    * Runs one round's agent; returns the accepted result, or the failure message. Every submission that passes the
    * round check goes through Grounding Review before it is accepted, and the review's findings come back as errors.
    */
@@ -300,6 +345,7 @@ export async function runClarify(opts: ClarifyOptions): Promise<ClarifyReport> {
     while (state.phase !== "closed") {
       if (state.phase === "answer") {
         await collectAnswers(
+          brief,
           state,
           opts.answerer,
           (next) => {
@@ -319,7 +365,14 @@ export async function runClarify(opts: ClarifyOptions): Promise<ClarifyReport> {
           log(`[clarify-final] interpreting the last Answers`);
           const result = await runAgent<FinalSubmission>("clarify-final", buildFinalPrompt(lib, brief, state), true, []);
           if (typeof result === "string") return fail(result);
+          const before = state;
           state = applyRound(state, { n: state.rounds.length + 1, final: true, prepare: [], accepted: result.accepted, ordering: "", reviews: result.reviews });
+          const checked = await runConsistency("clarify-final-consistency", true);
+          if (typeof checked === "string") {
+            state = before;
+            return fail(checked);
+          }
+          state = checked;
         }
         state = close(state, termination);
         break;
@@ -343,15 +396,23 @@ export async function runClarify(opts: ClarifyOptions): Promise<ClarifyReport> {
       log(`[${label}] interpreting ${state.agenda.filter((i) => i.status === "answered").length} Answer(s), preparing ${selection.ids.length} question(s)`);
       const result = await runAgent<RoundSubmission>(label, buildRoundPrompt(lib, brief, state, selection.ids, { maxGaps: limits.maxGapsPerRound }), false, selection.ids);
       if (typeof result === "string") return fail(result);
+      const before = state;
       state = applyRound(state, { n, final: false, prepare: selection.ids, accepted: result.accepted, ordering: selection.rationale, reviews: result.reviews });
+      const checked = await runConsistency(`${label}-consistency`, false);
+      if (typeof checked === "string") {
+        state = before;
+        return fail(checked);
+      }
+      state = checked;
 
       const candidates = {
+        conflicts: (state.rounds.at(-1)?.conflicts ?? []).filter((c) => c.status === "pending").map((c) => c.id),
         followUps: result.accepted.followUps.filter((f) => f.origin === "follow-up").map((f) => f.id),
         prepared: selection.ids.filter((id) => item(state, id).status === "pending" && result.accepted.prepared.some((p) => p.id === id)),
         gaps: result.accepted.followUps.filter((f) => f.origin === "gherkin-gap").map((f) => f.id),
       };
       const batch = await orderer.composeBatch(state, candidates, limits.batchSize);
-      const batchErrors = checkSelection(batch.ids, [...candidates.followUps, ...candidates.prepared, ...candidates.gaps], limits.batchSize);
+      const batchErrors = checkSelection(batch.ids, [...candidates.conflicts, ...candidates.followUps, ...candidates.prepared, ...candidates.gaps], limits.batchSize);
       if (batchErrors.length) throw new Error(`Question orderer returned an invalid batch: ${batchErrors.join("; ")}`);
       state = markAsked(state, batch.ids, batch.rationale);
       save();
@@ -372,7 +433,7 @@ export async function runClarify(opts: ClarifyOptions): Promise<ClarifyReport> {
 }
 
 /** Shows the current batch and commits each input as it comes, so an interruption loses nothing already said. */
-async function collectAnswers(start: ClarifyState, answerer: Answerer, commit: (state: ClarifyState) => void, now: () => Date): Promise<void> {
+async function collectAnswers(brief: RequirementBrief, start: ClarifyState, answerer: Answerer, commit: (state: ClarifyState) => void, now: () => Date): Promise<void> {
   let state = start;
   const round = state.rounds.at(-1);
   if (!round) throw new Error("No round to answer");
@@ -380,7 +441,14 @@ async function collectAnswers(start: ClarifyState, answerer: Answerer, commit: (
     .filter((q) => item(state, q.id).status === "asked")
     .map((q) => {
       const it = item(state, q.id);
-      return { ...q, kind: it.kind, origin: it.origin, relatedIds: it.relatedIds, ...(it.parentId ? { parentId: it.parentId } : {}) };
+      return {
+        ...q,
+        kind: it.kind,
+        origin: it.origin,
+        relatedIds: it.relatedIds,
+        ...(it.parentId ? { parentId: it.parentId } : {}),
+        ...(it.origin === "conflict" ? { sides: conflictSides(brief, state, it) } : {}),
+      };
     });
   await answerer.ask(questions, {
     round: round.n,

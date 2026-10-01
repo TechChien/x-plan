@@ -74,7 +74,7 @@ export function buildAligned(brief: RequirementBrief, state: ClarifyState): Alig
 function effectOf(state: ClarifyState, d: Decision): DecisionEffect {
   if (d.supersedes.length) return "replace";
   if (d.confirms.length) return "confirm";
-  if (d.resolves.some((id) => findItem(state, id)?.kind === "CTR")) return "reconcile";
+  if (d.resolves.some((id) => findItem(state, id)?.kind === "CTR" || findItem(state, id)?.origin === "conflict")) return "reconcile";
   return "new";
 }
 

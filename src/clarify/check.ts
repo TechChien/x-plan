@@ -85,14 +85,19 @@ export function checkRound(state: ClarifyState, submission: RoundSubmission | Fi
     d.wrongLanguage = languageErrors({ conclusion: d.op.conclusion }, ctx.language).length > 0;
   }
 
-  // Rule 5: every contradiction closed here is settled explicitly by at least one of its Decisions.
-  for (const ctrId of new Set(decisions.flatMap((d) => d.op.resolves.filter((id) => findItem(state, id)?.kind === "CTR")))) {
+  // Rule 5: every contradiction or conflict closed here is settled explicitly by at least one of its Decisions:
+  // one side superseded (a Brief fact) or revised (a Decision), or every side named to state when each applies.
+  const isConflict = (id: string) => findItem(state, id)?.kind === "CTR" || findItem(state, id)?.origin === "conflict";
+  for (const ctrId of new Set(decisions.flatMap((d) => d.op.resolves.filter(isConflict)))) {
     const sides = findItem(state, ctrId)?.relatedIds ?? [];
     const onIt = decisions.filter((d) => !d.errors.length && d.op.resolves.includes(ctrId));
-    const settled = onIt.some((d) => d.op.supersedes.some((id) => sides.includes(id)) || sides.every((id) => d.op.relatedIds.includes(id) || d.op.supersedes.includes(id)));
+    const replaced = (d: (typeof decisions)[number]) => [...d.op.supersedes, ...d.op.revises];
+    const settled = onIt.some((d) => replaced(d).some((id) => sides.includes(id)) || sides.every((id) => d.op.relatedIds.includes(id) || replaced(d).includes(id)));
     if (!settled && onIt.length) {
       for (const d of onIt) {
-        d.errors.push(`resolves ${ctrId} but no Decision on it supersedes one side (${sides.join(", ")}) or names both in relatedIds to state when each applies`);
+        d.errors.push(
+          `resolves ${ctrId} but no Decision on it supersedes (Brief facts) or revises (Decisions) one side (${sides.join(", ")}), or names every side in relatedIds to state when each applies`,
+        );
       }
     }
   }

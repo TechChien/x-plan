@@ -10,8 +10,8 @@ export interface AnswerLogEntry {
   parentId?: string;
   question: string;
   recommendation: string;
-  /** "target": a label's own item; "followUp": a follow-up of a label; "gap": a gap label; "unmatched": noise. */
-  role: "target" | "followUp" | "gap" | "unmatched";
+  /** "target": a label's own item; "followUp": a follow-up of a label; "gap" and "conflict": those labels; "unmatched": noise. */
+  role: "target" | "followUp" | "gap" | "conflict" | "unmatched";
   label?: string;
 }
 
@@ -28,6 +28,7 @@ export class LabelAnswerer implements Answerer {
   private readonly owner = new Map<string, string>();
   /** Gap labels already used: each answers one gap question, so a broad relatedIds match cannot hand the same reply to every related gap. */
   private readonly usedGaps = new Set<string>();
+  private readonly usedConflicts = new Set<string>();
   private readonly script: ScriptAnswerer;
 
   constructor(private readonly labels: ClarifyCase) {
@@ -57,6 +58,14 @@ export class LabelAnswerer implements Answerer {
       Object.assign(entry, { role: "followUp", label: label.id });
       const fit = label.followUpReply && label.followUpReply.any.some((k) => has(q.question, k));
       return fit ? label.followUpReply!.reply : unmatched;
+    }
+    if (q.origin === "conflict") {
+      const conflict = (this.labels.conflicts ?? []).find((c) => !this.usedConflicts.has(c.id) && c.any.some((k) => has(q.question, k)));
+      if (conflict) {
+        this.usedConflicts.add(conflict.id);
+        Object.assign(entry, { role: "conflict", label: conflict.id });
+        return conflict.reply;
+      }
     }
     if (q.origin === "gherkin-gap") {
       const gap = (this.labels.gaps ?? []).find((g) => !this.usedGaps.has(g.id) && g.relatedIds.every((id) => q.relatedIds.includes(id)));

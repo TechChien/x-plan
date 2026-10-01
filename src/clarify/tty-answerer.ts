@@ -35,7 +35,12 @@ export class TtyAnswerer implements Answerer {
     }
     for (const [i, q] of questions.entries()) {
       say();
-      say(`── [${i + 1}/${questions.length}] ${q.id} · ${q.origin === "gherkin-gap" ? "gap" : KIND_LABEL[q.kind]}${q.parentId ? ` of ${q.parentId}` : ""} ──`);
+      const label = q.origin === "gherkin-gap" ? "gap" : q.origin === "conflict" ? "conflict" : KIND_LABEL[q.kind];
+      say(`── [${i + 1}/${questions.length}] ${q.id} · ${label}${q.parentId ? ` of ${q.parentId}` : ""} ──`);
+      if (q.sides?.length) {
+        say("  These cannot all hold:");
+        for (const side of q.sides) say(`    ${side.id}: ${side.text}${side.answer ? `\n      ← ${side.answer}` : ""}`);
+      }
       say(q.question);
       say(`  Recommended${q.basis === "convention" ? " (common practice)" : ""}: ${q.recommendation}`);
       if (q.options.length) say(`  ${q.options.map((o, n) => `/${n + 1} ${o}`).join("   ")}`);

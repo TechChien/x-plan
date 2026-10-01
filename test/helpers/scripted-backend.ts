@@ -7,6 +7,9 @@ import type { AgentBackend, AgentSession, SessionOptions } from "../../src/agent
  */
 export type ScriptedTurn = { text: string } | { call: unknown } | { respond: (prompt: string) => unknown };
 
+/** A Consistency Check that finds no conflict. */
+export const noConflicts: ScriptedTurn = { call: { conflicts: [] } };
+
 /** A Grounding Review that finds every Decision in its prompt grounded. */
 export const approvingReview: ScriptedTurn = {
   respond: (prompt) => ({

@@ -8,5 +8,6 @@ Each Decision is one conclusion drawn from one Answer.
 - `revises`: earlier Decisions the user corrected, usually through a note. A Brief item already superseded by an active Decision can only be superseded again by revising that Decision.
 - `relatedIds`: other Brief ids the conclusion concerns.
 - A contradiction (CTR) is settled explicitly: supersede the side that no longer holds or, when both hold under different conditions, name both sides in `relatedIds` and say in the conclusion when each applies.
+- A conflict question (an FQ with `origin: conflict`, raised when Decisions or facts cannot all hold; its `relatedIds` are the sides) is settled the same way: `revises` the Decision that no longer holds, or `supersedes` the Brief fact. When both hold under different conditions, prefer revising the earlier Decision into one statement that says when each applies; otherwise name every side in `relatedIds`.
 - One Answer can decide several things: "7 days, but 14 for VIP members" is two Decisions.
 - You never decide that an item does not apply or can wait: the user says so with /na or /defer, and such items never reach `<pending-answers>`.

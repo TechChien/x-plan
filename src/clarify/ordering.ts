@@ -9,6 +9,8 @@ export interface OrderingResult {
 
 /** Candidates for the batch shown to the user after a round's submission, each list already in order. */
 export interface BatchCandidates {
+  /** Conflicts Consistency Check found in this round (ADR 0012). */
+  conflicts: string[];
   followUps: string[];
   prepared: string[];
   gaps: string[];
@@ -30,7 +32,8 @@ const SEVERITY = ["blocking", "high", "medium", "low"];
 const CONFIDENCE = ["low", "medium", "high"];
 
 /**
- * Provisional rule: contradictions, then open questions by severity, then assumptions least confident first,
+ * Provisional rule: conflicts between Decisions (an unsettled one may undermine everything asked after it), then
+ * contradictions, then open questions by severity, then assumptions least confident first,
  * then gherkin gaps. A follow-up ranks with the item it follows up, right after it.
  */
 export const ruleOrderer: QuestionOrderer = {
@@ -41,13 +44,13 @@ export const ruleOrderer: QuestionOrderer = {
       .sort((a, b) => compareKeys(a.key, b.key));
     return {
       ids: ranked.slice(0, limit).map((r) => r.id),
-      rationale: "Provisional rule: CTR, then OQ by severity, then ASM least confident first, then gherkin gaps; follow-ups with their origin",
+      rationale: "Provisional rule: conflicts, then CTR, then OQ by severity, then ASM least confident first, then gherkin gaps; follow-ups with their origin",
     };
   },
-  async composeBatch(_state, { followUps, prepared, gaps }, limit) {
+  async composeBatch(_state, { conflicts, followUps, prepared, gaps }, limit) {
     return {
-      ids: [...followUps, ...prepared, ...gaps].slice(0, limit),
-      rationale: "Provisional rule: new follow-ups, then prepared items in order, then gherkin gaps",
+      ids: [...conflicts, ...followUps, ...prepared, ...gaps].slice(0, limit),
+      rationale: "Provisional rule: conflicts, then new follow-ups, then prepared items in order, then gherkin gaps",
     };
   },
 };
@@ -67,6 +70,7 @@ function rankKey(state: ClarifyState, it: AgendaItem): Key {
 }
 
 function rootRank(it: AgendaItem): number {
+  if (it.origin === "conflict") return -1;
   if (it.kind === "CTR") return 0;
   if (it.kind === "OQ") return 1 + SEVERITY.indexOf(it.severity ?? "low");
   if (it.kind === "ASM") return 5 + CONFIDENCE.indexOf(it.confidence ?? "high");

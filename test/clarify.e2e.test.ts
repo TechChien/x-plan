@@ -12,7 +12,7 @@ import type { ClarifyState, DecisionOp, Prepared, RoundSubmission } from "../src
 import { runClarify, type ClarifyOptions } from "../src/clarify/stage.ts";
 import { parseConfig } from "../src/config.ts";
 import { returnsBrief } from "./helpers/brief.ts";
-import { approvingReview, ScriptedBackend, type ScriptedTurn } from "./helpers/scripted-backend.ts";
+import { approvingReview, noConflicts, ScriptedBackend, type ScriptedTurn } from "./helpers/scripted-backend.ts";
 
 const config = parseConfig({ provider: { baseUrl: "http://unused" } });
 
@@ -48,13 +48,19 @@ const round = (decisions: DecisionOp[], prepared: string[], extra: Partial<Round
 
 /**
  * Plays one script per interpreter session, in order, and remembers which tool each had. Grounding Review sessions
- * play `review` (by default: everything is grounded) and are not counted.
+ * play `review` (by default: everything is grounded) and Consistency Check sessions `consistency` (by default: no
+ * conflict); neither is counted.
  */
-function backend(scripts: ScriptedTurn[][], review: () => ScriptedTurn[] = () => [approvingReview]): ScriptedBackend & { tools: string[] } {
+function backend(
+  scripts: ScriptedTurn[][],
+  review: () => ScriptedTurn[] = () => [approvingReview],
+  consistency: () => ScriptedTurn[] = () => [noConflicts],
+): ScriptedBackend & { tools: string[] } {
   const tools: string[] = [];
   let next = 0;
   const b = new ScriptedBackend((options: SessionOptions) => {
     if (options.tool.name === "submit_review") return review();
+    if (options.tool.name === "submit_conflicts") return consistency();
     tools.push(options.tool.name);
     return scripts[next++] ?? [];
   }) as ScriptedBackend & { tools: string[] };
@@ -133,7 +139,15 @@ describe("runClarify", () => {
     expect(run.source).toEqual({ kind: "run", runDir: dir.extract, file: "01-brief.json", ...source });
     expect(aligned.source).toEqual(source);
     expect(existsSync(join(dir.extract, "02-state.json"))).toBe(false); // the Extract Run is only read
-    expect(run.agents.map((a) => a.label)).toEqual(["clarify-r1", "clarify-r2-review1", "clarify-r2", "clarify-r3-review1", "clarify-r3"]);
+    expect(run.agents.map((a) => a.label)).toEqual([
+      "clarify-r1",
+      "clarify-r2-review1",
+      "clarify-r2",
+      "clarify-r2-consistency",
+      "clarify-r3-review1",
+      "clarify-r3",
+      "clarify-r3-consistency",
+    ]);
     expect(existsSync(join(out, "prompts", "clarify-r2-review1.user.md"))).toBe(true);
 
     const state = readJson<ClarifyState>(join(out, "02-state.json"));
@@ -381,5 +395,91 @@ describe("Grounding Review", () => {
     const state = readJson<ClarifyState>(join(dir.clarify, "02-state.json"));
     expect(state.decisions).toEqual([]);
     expect(item(state, "OQ-2").status).toBe("answered");
+  });
+});
+
+const conflictTurn = (ids: string[]): ScriptedTurn => ({
+  call: { conflicts: [{ ids, conflict: `${ids.join(" 與 ")} 不能同時成立`, question: "以哪一個為準？", recommendation: `以 ${ids[1]} 為準`, basis: "brief", options: [] }] },
+});
+
+/** Consistency Check sessions play these scripts in order, then find nothing. */
+const consistencyScripts = (scripts: ScriptedTurn[][]) => {
+  let next = 0;
+  return () => scripts[next++] ?? [noConflicts];
+};
+
+describe("Consistency Check", () => {
+  test("a conflict between Decisions is asked first in the next batch, with both sides, and settled by revising one", async () => {
+    const dir = runDir();
+    const b = backend(
+      [
+        [firstRound],
+        [round([op("R1/CTR-1", ["CTR-1"], "取消期限為下單後 7 天", { supersedes: ["BR-1"] }), op("R1/OQ-1", ["OQ-1"], "下單後一律可以取消")], ["ASM-2", "ASM-1"])],
+        [round([op("R2/FQ-1", ["FQ-1"], "下單後 7 天內可以取消", { revises: ["DEC-2"] })], [])],
+      ],
+      () => [approvingReview],
+      consistencyScripts([[conflictTurn(["DEC-2", "DEC-1"])]]),
+    );
+    const asked: AskedQuestion[] = [];
+    const answers = (q: AskedQuestion) => {
+      asked.push(q);
+      return { "CTR-1": "7 天", "OQ-1": "都可以取消", "FQ-1": "以 7 天為準" }[q.id] ?? "/defer";
+    };
+    const report = await runClarify(options(dir, b, answers));
+    expect(report).toMatchObject({ status: "succeeded", termination: "converged" });
+
+    const round2 = asked.slice(5);
+    expect(round2.map((q) => q.id)).toEqual(["FQ-1", "ASM-2", "ASM-1"]);
+    expect(round2[0]).toMatchObject({
+      origin: "conflict",
+      sides: [
+        { id: "DEC-2", text: "下單後一律可以取消", answer: "R1/OQ-1: 都可以取消" },
+        { id: "DEC-1", text: "取消期限為下單後 7 天", answer: "R1/CTR-1: 7 天" },
+      ],
+    });
+
+    const state = readJson<ClarifyState>(join(dir.clarify, "02-state.json"));
+    expect(state.decisions.map((d) => [d.id, d.status, d.revisedBy])).toEqual([
+      ["DEC-1", "active", undefined],
+      ["DEC-2", "revised", "DEC-3"],
+      ["DEC-3", "active", undefined],
+    ]);
+    expect(item(state, "FQ-1")).toMatchObject({ status: "decided", origin: "conflict", relatedIds: ["DEC-2", "DEC-1"] });
+    expect(readJson<AlignedBrief>(join(dir.clarify, "02-aligned.json")).decisions.find((d) => d.id === "DEC-3")?.effect).toBe("reconcile");
+    expect(readFileSync(join(dir.clarify, "02-transcript.md"), "utf8")).toContain("**Conflicts found**");
+    expect(replay(returnsBrief(), state)).toEqual(state);
+  });
+
+  test("a conflict found in the closing round cannot be asked and is left unresolved in the Aligned Brief", async () => {
+    const dir = runDir();
+    const b = backend(
+      [[firstRound], [{ call: { decisions: [op("R1/CTR-1", ["CTR-1"], "取消期限為下單後 3 天", { relatedIds: ["BR-1", "BR-2"] })] } }]],
+      () => [approvingReview],
+      consistencyScripts([[conflictTurn(["DEC-1", "BR-2"])]]),
+    );
+    const report = await runClarify(options(dir, b, (q) => (q.id === "CTR-1" ? "3 天" : "/done")));
+    expect(report).toMatchObject({ status: "succeeded", termination: "done" });
+    const state = readJson<ClarifyState>(join(dir.clarify, "02-state.json"));
+    expect(item(state, "FQ-1")).toMatchObject({ origin: "conflict", status: "unresolved", relatedIds: ["DEC-1", "BR-2"] });
+    expect(readFileSync(join(dir.clarify, "02-aligned.md"), "utf8")).toMatch(/\*\*FQ-1\*\* \(unresolved\) 以哪一個為準？ _\(conflict: DEC-1 ↔ BR-2\)_/);
+    expect(existsSync(join(dir.clarify, "traces", "clarify-final-consistency.md"))).toBe(true);
+    expect(replay(returnsBrief(), state)).toEqual(state);
+  });
+
+  test("a Consistency Check that fails fails the round without writing its Decisions, so the round can be retried", async () => {
+    const dir = runDir();
+    const second = round([op("R1/CTR-1", ["CTR-1"], "取消期限為下單後 7 天", { supersedes: ["BR-1"] })], ["ASM-2", "ASM-1"]);
+    const answers = (q: AskedQuestion) => (q.id === "CTR-1" ? "7 天" : "/defer");
+    const failing = backend([[firstRound], [second]], () => [approvingReview], () => [{ text: "no tool call" }]);
+    const report = await runClarify(options(dir, failing, answers));
+    expect(report.status).toBe("failed");
+    expect(report.failures[0]).toMatch(/clarify-r2-consistency failed \(no-submit\)/);
+    const saved = readJson<ClarifyState>(join(dir.clarify, "02-state.json"));
+    expect(saved.decisions).toEqual([]);
+    expect(saved.rounds).toHaveLength(1);
+    expect(item(saved, "CTR-1").status).toBe("answered");
+
+    const retried = await runClarify(options(dir, backend([[second]]), answers));
+    expect(retried).toMatchObject({ status: "succeeded", termination: "converged" });
   });
 });

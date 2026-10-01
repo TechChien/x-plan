@@ -44,6 +44,12 @@ export const ClarifyCaseSchema = Type.Object({
   ),
   /** Gherkin gaps the model should raise: a gap question whose relatedIds include every id. */
   gaps: Type.Optional(Type.Array(Type.Object({ id: Type.String(), relatedIds: Type.Array(Type.String(), { minItems: 1 }), reply: Type.Optional(Reply) }))),
+  /**
+   * Conflicts the session should surface (ADR 0012), usually set up by a reply that contradicts an earlier one.
+   * Handled when a conflict question contains ANY keyword (answered with `reply`, once), or when the interpreter
+   * itself revises a Decision whose conclusion contains ANY keyword.
+   */
+  conflicts: Type.Optional(Type.Array(Type.Object({ id: Type.String(), any: Keywords, reply: Reply }))),
   /** Reply to every question no label matches; each one counts as noise. Default /na. */
   unmatchedReply: Type.Optional(Type.String()),
 });

@@ -1,6 +1,7 @@
 description: >
   電商退貨與取消（Clarify）。量測：矛盾是否以推翻正確一方結案、一則回答拆成多條 Decision、
-  模糊回答是否追問、假設的確認與推翻、退貨功能缺少驗收條件時是否提出 gherkin-gap。
+  模糊回答是否追問、假設的確認與推翻、退貨功能缺少驗收條件時是否提出 gherkin-gap，
+  以及使用者後來的回答與先前的 Decision 衝突時，是否提出衝突題（Consistency Check）。
 
 language: zh
 
@@ -33,7 +34,8 @@ answers:
         - { all: ["收到"] }
   - id: login
     target: ASM-1
-    reply: "對，兩者都要登入"
+    # 後半句與 return-fee（個人因素退貨由會員負擔運費）衝突，見 conflicts。
+    reply: "對，兩者都要登入；另外退貨運費一律由平台吸收"
     expectDecisions:
       - { all: ["登入"], confirms: true }
   - id: refund-days
@@ -46,5 +48,10 @@ gaps:
   - id: return-ac
     relatedIds: [FEAT-2]
     reply: "送出後顯示退貨申請編號，審核結果以通知告知會員"
+
+conflicts:
+  - id: fee-conflict
+    any: ["運費"]
+    reply: "以先前為準：商品瑕疵由平台負擔，個人因素退貨由會員負擔；平台吸收只適用於瑕疵品"
 
 unmatchedReply: /na

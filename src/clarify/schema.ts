@@ -57,8 +57,27 @@ export type RoundSubmission = Static<typeof RoundSubmissionSchema>;
 export const FinalSubmissionSchema = Type.Object({ decisions: Type.Array(DecisionOpSchema) }, { additionalProperties: false });
 export type FinalSubmission = Static<typeof FinalSubmissionSchema>;
 
+/** Consistency Check's submission (ADR 0012): Decisions or facts that cannot all hold, each put to the user as a question. */
+export const ConsistencySubmissionSchema = Type.Object(
+  {
+    conflicts: Type.Array(
+      Type.Object(
+        {
+          ids: Type.Array(Type.String(), { minItems: 2, description: "The Decisions and Brief facts that cannot all hold; at least one is from <new>" }),
+          conflict: Str("What cannot hold together, as one sentence naming the ids"),
+          ...QuestionText,
+        },
+        { additionalProperties: false },
+      ),
+    ),
+  },
+  { additionalProperties: false },
+);
+export type ConsistencySubmission = Static<typeof ConsistencySubmissionSchema>;
+export type ConflictOp = ConsistencySubmission["conflicts"][number];
+
 export type AgendaKind = "OQ" | "CTR" | "ASM" | "FQ" | "NOTE";
-export type AgendaOrigin = "brief" | "follow-up" | "gherkin-gap" | "user";
+export type AgendaOrigin = "brief" | "follow-up" | "gherkin-gap" | "user" | "conflict";
 export type AgendaStatus = "pending" | "asked" | "answered" | "followed-up" | "decided" | "deferred" | "dismissed" | "unresolved";
 
 export const TERMINAL_STATUSES: readonly AgendaStatus[] = ["decided", "deferred", "dismissed", "unresolved"];
@@ -134,6 +153,17 @@ export interface AcceptedRound {
   leftOpen?: string[];
 }
 
+/**
+ * A conflict Consistency Check found after a round's Decisions were written, as the program numbered it. `pending`
+ * conflicts are asked; `unresolved` ones could not be (closing round, or a chain of conflicts too deep).
+ */
+export interface AcceptedConflict extends ConflictOp {
+  id: string;
+  /** 1 for a conflict among ordinary Decisions; one more than the deepest conflict a Decision involved settled. */
+  depth: number;
+  status: "pending" | "unresolved";
+}
+
 /** Why Grounding Review stopped a Decision. */
 export type ReviewVerdict = "embellished" | "partial" | "off-topic";
 
@@ -165,6 +195,8 @@ export interface RoundRecord {
   ordering: { prepare: string; batch: string };
   /** Grounding Review of every Decision submitted in this round, every attempt. Absent before Grounding Review. */
   reviews?: ReviewRecord[];
+  /** Conflicts Consistency Check found among this round's Decisions. Absent before Consistency Check. */
+  conflicts?: AcceptedConflict[];
 }
 
 export interface ClarifyRejected {

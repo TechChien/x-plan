@@ -48,9 +48,9 @@ describe("ruleOrderer.selectPrepare (provisional rule, ADR 0009)", () => {
 });
 
 describe("ruleOrderer.composeBatch", () => {
-  test("new follow-ups first, then the prepared items in order, then gaps, cut at the batch size", async () => {
-    const { ids } = await ruleOrderer.composeBatch(state(), { followUps: ["FQ-3"], prepared: ["CTR-1", "OQ-1", "OQ-2"], gaps: ["FQ-4", "FQ-5"] }, 5);
-    expect(ids).toEqual(["FQ-3", "CTR-1", "OQ-1", "OQ-2", "FQ-4"]);
+  test("conflicts first, then new follow-ups, then the prepared items in order, then gaps, cut at the batch size", async () => {
+    const { ids } = await ruleOrderer.composeBatch(state(), { conflicts: ["FQ-6"], followUps: ["FQ-3"], prepared: ["CTR-1", "OQ-1", "OQ-2"], gaps: ["FQ-4", "FQ-5"] }, 5);
+    expect(ids).toEqual(["FQ-6", "FQ-3", "CTR-1", "OQ-1", "OQ-2"]);
   });
 });
 

@@ -10,7 +10,7 @@ import { LabelAnswerer } from "../src/eval/clarify/answerer.ts";
 import { loadClarifyCase } from "../src/eval/clarify/cases.ts";
 import { renderClarifyReport, runClarifyEval } from "../src/eval/clarify/run.ts";
 import type { RequirementBrief } from "../src/extract/schema.ts";
-import { approvingReview, ScriptedBackend, type ScriptedTurn } from "./helpers/scripted-backend.ts";
+import { approvingReview, noConflicts, ScriptedBackend, type ScriptedTurn } from "./helpers/scripted-backend.ts";
 
 const CASE_DIR = join(import.meta.dirname, "..", "eval", "cases", "returns");
 const labels = loadClarifyCase(join(CASE_DIR, "clarify", "answers.yaml"));
@@ -62,6 +62,7 @@ function scripts(cancelSupersedes = "BR-1"): ScriptedTurn[][] {
           decisions: [
             op("R2/FQ-2", ["FQ-2", "OQ-3"], "鑑賞期為收到商品隔天起算 7 天"),
             op("R2/ASM-1", ["ASM-1"], "取消訂單與申請退貨都需要登入", { confirms: ["ASM-1"] }),
+            op("R2/ASM-1", ["ASM-1"], "退貨運費一律由平台吸收", { revises: ["DEC-4"] }),
             op("R2/FQ-1", ["FQ-1"], "退貨申請送出後顯示申請編號，審核結果以通知告知會員"),
           ],
           followUps: [],
@@ -74,7 +75,9 @@ function scripts(cancelSupersedes = "BR-1"): ScriptedTurn[][] {
 
 function backend(turns: ScriptedTurn[][]): AgentBackend {
   let next = 0;
-  return new ScriptedBackend((o: SessionOptions) => (o.tool.name === "submit_review" ? [approvingReview] : (turns[next++] ?? [])));
+  return new ScriptedBackend((o: SessionOptions) =>
+    o.tool.name === "submit_review" ? [approvingReview] : o.tool.name === "submit_conflicts" ? [noConflicts] : (turns[next++] ?? []),
+  );
 }
 
 const config = parseConfig({ provider: { baseUrl: "http://unused" } });
@@ -131,6 +134,21 @@ describe("LabelAnswerer", () => {
     ]);
   });
 
+  test("a conflict question is answered by the conflict label its question matches, once; any other is unmatched", async () => {
+    const { recorded, log } = await ask([
+      q("FQ-7", { kind: "FQ", origin: "conflict", question: "DEC-4 與 DEC-7 的退貨運費規定不一致，以哪一個為準？" }),
+      q("FQ-8", { kind: "FQ", origin: "conflict", question: "運費的兩條 Decision 又衝突了？" }),
+    ]);
+    expect(recorded).toEqual([
+      { type: "response", itemId: "FQ-7", kind: "text", text: "以先前為準：商品瑕疵由平台負擔，個人因素退貨由會員負擔；平台吸收只適用於瑕疵品" },
+      { type: "response", itemId: "FQ-8", kind: "na", text: "" },
+    ]);
+    expect(log.map((e) => [e.questionId, e.role, e.label])).toEqual([
+      ["FQ-7", "conflict", "fee-conflict"],
+      ["FQ-8", "unmatched", undefined],
+    ]);
+  });
+
   test("a gap label answers only the first gap it matches; later matching gaps are noise", async () => {
     const answerer = new LabelAnswerer(labels);
     const recorded: unknown[] = [];
@@ -166,6 +184,7 @@ describe("runClarifyEval", () => {
       recommendations: { good: ["return-fee"], bad: [] },
       selfAnswerBlocked: 0,
       review: { embellished: 0, partial: 0, offTopic: 0 },
+      conflicts: { handled: ["fee-conflict"], missed: [], unneeded: [] },
       rounds: 3,
       questionsAsked: 8,
       termination: "converged",

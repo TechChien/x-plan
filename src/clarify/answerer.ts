@@ -9,6 +9,8 @@ export interface AskedQuestion extends QuestionView {
   origin: AgendaItem["origin"];
   parentId?: string;
   relatedIds: string[];
+  /** Conflicts only: each side as it stands, with the Answer a Decision was drawn from. */
+  sides?: { id: string; text: string; answer?: string }[];
 }
 
 export interface AnswerSession {

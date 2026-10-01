@@ -18,6 +18,11 @@ export function renderTranscript(state: ClarifyState): string {
       for (const f of round.accepted.followUps) out.push(`- ${f.id} (${f.origin}${f.parentId ? ` of ${f.parentId}` : ""}): ${f.question}`);
       out.push("");
     }
+    if (round.conflicts?.length) {
+      out.push("**Conflicts found**", "");
+      for (const c of round.conflicts) out.push(`- ${c.id} (${c.ids.join(" ↔ ")}${c.status === "unresolved" ? ", cannot be asked" : ""}): ${c.conflict}`);
+      out.push("");
+    }
     if (round.asked.length) out.push("**Asked**", "");
     for (const q of round.asked) {
       out.push(`**${q.id}** ${q.question}`);
@@ -62,7 +67,8 @@ export function renderAlignedMarkdown(aligned: AlignedBrief): string {
   if (!open.length) out.push("_None._");
   for (const a of open) {
     const said = a.answers.filter((x) => x.text).map((x) => `“${x.text}”`);
-    out.push(`- **${a.id}** (${a.status}) ${a.question}${said.length ? `  \n  User: ${said.join(" / ")}` : ""}`);
+    const conflict = a.origin === "conflict" ? ` _(conflict: ${a.relatedIds.join(" ↔ ")})_` : "";
+    out.push(`- **${a.id}** (${a.status}) ${a.question}${conflict}${said.length ? `  \n  User: ${said.join(" / ")}` : ""}`);
   }
   return `${out.join("\n")}\n`;
 }
