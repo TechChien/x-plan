@@ -5,14 +5,16 @@ import { PiBackend } from "./agent/pi-backend.ts";
 import { CLARIFY_LIMITS } from "./clarify/schema.ts";
 import { runClarify } from "./clarify/stage.ts";
 import { TtyAnswerer } from "./clarify/tty-answerer.ts";
-import { findConfigPath, loadConfig, parseConfig, type XPlanConfig } from "./config.ts";
+import { CONFIG_FILE_NAME, findConfigPath, loadConfig, parseConfig, type XPlanConfig } from "./config.ts";
 import { OUTPUT_LANGUAGES, type OutputLanguage } from "./shared/language.ts";
 import { newRunId, readRunMeta, resolveRunDir, runsDir } from "./shared/runs.ts";
 import { runExtract } from "./extract/stage.ts";
 import { startTelemetry } from "./telemetry/setup.ts";
 import { feedbackAction, formatFeedback, recordFeedback, resolveAuthor, type FeedbackOptions } from "./feedback/feedback.ts";
 import { MAX_SCORE, MIN_SCORE } from "./feedback/schema.ts";
-import { readFeedback } from "./feedback/store.ts";
+import { readFeedback, standing } from "./feedback/store.ts";
+import { LangfuseScores, readSyncState, syncFeedback, syncStatus, type SyncReport } from "./feedback/sync.ts";
+import { langfuseCredentials } from "./shared/langfuse.ts";
 
 const program = new Command();
 program.name("x-plan").description("Turn requirement documents into BDD (Gherkin) specs");
@@ -150,15 +152,41 @@ program
     const what = feedbackAction(item, opts);
     if (what.action === "list") {
       const entries = readFeedback(runDir);
-      const lines = formatFeedback(entries, (id) => (entries.some((e) => e.id === id && "trace" in e && e.trace) ? "traced" : "no trace"));
+      const state = readSyncState(runDir);
+      const lines = formatFeedback(entries, (id) => syncStatus(standing(entries).find((e) => e.id === id)!, state));
       console.log(lines.length ? lines.join("\n") : "No Feedback yet.");
       return;
     }
-    if (what.action === "sync") throw new Error("--sync needs a langfuse block in the config");
+
+    const configPath = opts.config ? resolve(cwd, opts.config) : findConfigPath(cwd);
+    const config = configPath ? loadConfig(cwd, configPath) : undefined;
+    if (what.action === "sync") {
+      const creds = config && langfuseCredentials(config);
+      if (!creds) throw new Error(`--sync needs a langfuse block in ${configPath ?? CONFIG_FILE_NAME}`);
+      reportSync(await syncFeedback(runDir, new LangfuseScores(creds)), log);
+      return;
+    }
+
     const recorded = recordFeedback(runDir, what.request, { author: resolveAuthor(), now: new Date() });
     for (const w of recorded.warnings) log(`warning: ${w}`);
     log(`Recorded ${recorded.entry.id}${recorded.replaces ? `, replacing ${recorded.replaces}` : ""}${recorded.entry.type === "retract" ? `, withdrawing ${recorded.entry.retracts}` : ""}`);
+    if (!config?.langfuse) return;
+    // Mirroring is best effort: the Feedback is already saved, and --sync retries.
+    try {
+      const creds = langfuseCredentials(config)!;
+      const report = await syncFeedback(runDir, new LangfuseScores(creds));
+      reportSync({ ...report, untraced: report.untraced.filter((id) => id === recorded.entry.id) }, log);
+    } catch (error) {
+      log(`warning: not sent to Langfuse (${error instanceof Error ? error.message : String(error)}); run --sync later`);
+    }
   });
+
+function reportSync(report: SyncReport, log: (message: string) => void): void {
+  const done = [report.created.length && `sent ${report.created.join(", ")}`, report.deleted.length && `removed ${report.deleted.join(", ")}`].filter(Boolean);
+  if (done.length) log(`Langfuse: ${done.join("; ")}`);
+  if (report.untraced.length) log(`Langfuse: ${report.untraced.join(", ")} stay local: the Run was not traced`);
+  if (report.error) log(`warning: Langfuse sync stopped (${report.error}); run --sync to retry`);
+}
 
 /** Traces `fn` when telemetry is on (ADR 0013); spans are flushed before the command returns. */
 async function withTelemetry<T>(config: XPlanConfig, log: (message: string) => void, fn: () => Promise<T>): Promise<T> {
