@@ -19,13 +19,15 @@ const has = (text: string, keyword: string) => normalize(text).toLowerCase().inc
 
 /**
  * Plays the user from a case's labels (plan §5): Brief items by id, follow-ups through the label of the item they
- * follow up, gaps by their relatedIds, and everything else with `unmatchedReply`.
+ * follow up, gaps by their relatedIds (each gap label once), and everything else with `unmatchedReply`.
  */
 export class LabelAnswerer implements Answerer {
   readonly via = "eval";
   readonly log: AnswerLogEntry[] = [];
   /** Agenda Item id → label id, for items asked on behalf of a label (targets and their follow-ups). */
   private readonly owner = new Map<string, string>();
+  /** Gap labels already used: each answers one gap question, so a broad relatedIds match cannot hand the same reply to every related gap. */
+  private readonly usedGaps = new Set<string>();
   private readonly script: ScriptAnswerer;
 
   constructor(private readonly labels: ClarifyCase) {
@@ -57,8 +59,9 @@ export class LabelAnswerer implements Answerer {
       return fit ? label.followUpReply!.reply : unmatched;
     }
     if (q.origin === "gherkin-gap") {
-      const gap = (this.labels.gaps ?? []).find((g) => g.relatedIds.every((id) => q.relatedIds.includes(id)));
+      const gap = (this.labels.gaps ?? []).find((g) => !this.usedGaps.has(g.id) && g.relatedIds.every((id) => q.relatedIds.includes(id)));
       if (gap) {
+        this.usedGaps.add(gap.id);
         Object.assign(entry, { role: "gap", label: gap.id });
         return gap.reply ?? unmatched;
       }

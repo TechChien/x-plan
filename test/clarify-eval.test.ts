@@ -130,6 +130,24 @@ describe("LabelAnswerer", () => {
       ["ASM-9", "unmatched", undefined],
     ]);
   });
+
+  test("a gap label answers only the first gap it matches; later matching gaps are noise", async () => {
+    const answerer = new LabelAnswerer(labels);
+    const recorded: unknown[] = [];
+    const session = (round: number) => ({ round, record: (input: unknown) => (recorded.push(input), undefined) });
+    await answerer.ask([q("FQ-1", { kind: "FQ", origin: "gherkin-gap", relatedIds: ["FEAT-2", "BR-3"] }), q("FQ-2", { kind: "FQ", origin: "gherkin-gap", relatedIds: ["FEAT-2"] })], session(1));
+    await answerer.ask([q("FQ-3", { kind: "FQ", origin: "gherkin-gap", relatedIds: ["BR-4", "FEAT-2"] })], session(2));
+    expect(recorded).toEqual([
+      { type: "response", itemId: "FQ-1", kind: "text", text: "送出後顯示退貨申請編號，審核結果以通知告知會員" },
+      { type: "response", itemId: "FQ-2", kind: "na", text: "" },
+      { type: "response", itemId: "FQ-3", kind: "na", text: "" },
+    ]);
+    expect(answerer.log.map((e) => [e.questionId, e.role, e.label])).toEqual([
+      ["FQ-1", "gap", "return-ac"],
+      ["FQ-2", "unmatched", undefined],
+      ["FQ-3", "unmatched", undefined],
+    ]);
+  });
 });
 
 describe("runClarifyEval", () => {

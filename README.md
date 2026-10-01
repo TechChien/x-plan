@@ -158,7 +158,7 @@ XPLAN_API_KEY=... pnpm eval --stage clarify [--cases returns] [--repeat 5]
 只跑有 `clarify/` 子目錄的案例。Clarify 的輸入是一份固定、經人工審過的 `clarify/brief.json`，不先跑 Extract，所以分數不受 Extract 的變異影響。使用者由 `clarify/answers.yaml` 扮演（範例見 [eval/cases/returns/clarify/answers.yaml](eval/cases/returns/clarify/answers.yaml)）：
 
 - `answers`：每個標註以 `target` 指定 Brief 的題目 id（fixture 的 id 固定），`reply` 是使用者會輸入的內容，可以用 `/ok`、`/defer` 等指令。`expectDecisions` 列出這則回答應該產生的 Decision（結論包含全部關鍵字；`supersedes` 的每組關鍵字要對到一條被推翻的 Brief 條目；`confirms: true` 表示要確認該假設）。`ambiguous: true` 表示回答刻意模糊、應該被追問，`followUpReply` 回答問題包含任一關鍵字的追問。`goodRecommendation` 檢查第一次顯示的建議答案。
-- `gaps`：應該提出的 gherkin-gap，以 `relatedIds` 比對。
+- `gaps`：應該提出的 gherkin-gap，以 `relatedIds` 比對。每個 gap 標註只回答第一題對到的題目，之後對到的一律以 `unmatchedReply` 回答，避免同一句回答被套到每一題相關的 gap。
 - `unmatchedReply`：沒有對到任何標註的題目一律這樣回答（預設 `/na`），並計為雜訊題。
 
 報告的指標：解讀正確率、錯誤推翻數、追問召回與多餘追問、gap 召回、雜訊題數、建議答案命中率、自行作答攔截數（agent 試圖在沒有回答時做出 Decision 而被退回的次數）、Round 數與結束原因、交卷次數、prefix cache 命中率、token 用量。每次執行的 run 目錄另有 `eval-answers.json`，記錄每一題是由哪個標註回答的。
