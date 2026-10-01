@@ -8,10 +8,12 @@ export function normalize(text: string): string {
 
 interface IndexedFile {
   lineCount: number;
-  /** Normalized lines joined by single spaces. */
+  /** Normalized non-blank lines joined by single spaces. */
   text: string;
   /** Offset in `text` where each line (1-based index - 1) starts. */
   lineOffsets: number[];
+  /** Offset in `text` just past each line's content. */
+  lineEnds: number[];
 }
 
 export class SourceIndex {
@@ -20,13 +22,17 @@ export class SourceIndex {
   constructor(sources: SourceText[]) {
     for (const s of sources) {
       const lines = s.text.split("\n").map(normalize);
+      // A blank line adds no space of its own: a quote normalizes "\n\n" to one space, so the text must too.
       const lineOffsets: number[] = [];
-      let offset = 0;
+      const lineEnds: number[] = [];
+      let text = "";
       for (const line of lines) {
-        lineOffsets.push(offset);
-        offset += line.length + 1;
+        if (line && text) text += " ";
+        lineOffsets.push(text.length);
+        text += line;
+        lineEnds.push(text.length);
       }
-      this.files.set(s.path, { lineCount: lines.length, text: lines.join(" "), lineOffsets });
+      this.files.set(s.path, { lineCount: lines.length, text, lineOffsets, lineEnds });
     }
   }
 
@@ -46,7 +52,7 @@ export class SourceIndex {
 
     if (ev.lineStart <= ev.lineEnd && ev.lineStart >= 1 && ev.lineEnd <= file.lineCount) {
       const from = file.lineOffsets[ev.lineStart - 1] as number;
-      const to = ev.lineEnd < file.lineCount ? (file.lineOffsets[ev.lineEnd] as number) - 1 : file.text.length;
+      const to = file.lineEnds[ev.lineEnd - 1] as number;
       if (file.text.slice(from, to).includes(quote)) return { ok: true, evidence: ev, relocated: false };
     }
 

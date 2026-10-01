@@ -31,6 +31,16 @@ describe("SourceIndex.verify", () => {
     expect(!r.ok && r.error).toMatch(/appears 2 times/);
   });
 
+  test("a quote may span blank lines, which count as a single space like any other line break", () => {
+    const spec = new SourceIndex([
+      { path: "spec.md", converted: false, text: "# Guide\n\n### New Endpoint: `POST /collect`\n\nSubmit CPE inventory.\n\n\nAuth: X-API-Key" },
+    ]);
+    const quote = "### New Endpoint: `POST /collect`\n\nSubmit CPE inventory.";
+    expect(spec.verify({ file: "spec.md", lineStart: 3, lineEnd: 5, quote })).toMatchObject({ ok: true, relocated: false });
+    expect(spec.verify({ file: "spec.md", lineStart: 1, lineEnd: 1, quote })).toEqual({ ok: true, relocated: true, evidence: { file: "spec.md", lineStart: 3, lineEnd: 5, quote } });
+    expect(spec.verify({ file: "spec.md", lineStart: 5, lineEnd: 8, quote: "Submit CPE inventory. Auth: X-API-Key" })).toMatchObject({ ok: true, relocated: false });
+  });
+
   test("rejects invented quotes and unknown files", () => {
     expect(index.verify({ file: "prd.md", lineStart: 2, lineEnd: 2, quote: "7 天內可取消" }).ok).toBe(false);
     expect(index.verify({ file: "nope.md", lineStart: 1, lineEnd: 1, quote: "x" }).ok).toBe(false);
