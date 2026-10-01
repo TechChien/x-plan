@@ -11,6 +11,7 @@ import { applyAnalysis, checkAnalysis, type OpIssue } from "./apply-analysis.ts"
 import { SourceIndex } from "./evidence.ts";
 import { LANGUAGE_NAMES, languageErrors, type OutputLanguage } from "../shared/language.ts";
 import { mergeFacts } from "./merge.ts";
+import { buildProvenance } from "./provenance.ts";
 import { savePrompt, writeJson, writeText, type BuiltPrompt } from "../shared/run-files.ts";
 import { buildNudge, runTraced, validationFeedback } from "../shared/traced.ts";
 import { buildAnalysisPrompt, buildFactsPrompt, buildFactsSystemPrompt } from "./prompts.ts";
@@ -282,7 +283,9 @@ export async function runExtract(opts: ExtractOptions): Promise<ExtractReport> {
   writeJson(join(runDir, "01-analysis-log.json"), analysisLog);
   writeText(join(runDir, "01-brief.md"), renderBriefMarkdown(brief, rejected, analysisLog));
   const status = failures.length ? "failed" : "succeeded";
-  writeRun(status, { counts: countBySection(brief), rejectedCount: rejected.length, idMaps, deduped: Object.fromEntries(merged.deduped) });
+  const deduped = Object.fromEntries(merged.deduped);
+  const provenance = buildProvenance({ idMaps, deduped, merges: analysisLog.merged, brief, analysisLabel: "analysis" });
+  writeRun(status, { counts: countBySection(brief), rejectedCount: rejected.length, idMaps, deduped, provenance });
   return { status, failures, warnings, runDir, brief, rejected };
 }
 

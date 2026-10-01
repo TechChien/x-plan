@@ -85,6 +85,9 @@ describe("runExtract end to end (scripted agents)", () => {
     expect(run.status).toBe("succeeded");
     expect(run.agents.map((a: { label: string }) => a.label).sort()).toEqual(["analysis", "facts-bin1"]);
     expect(Object.keys(run.promptHashes)).toContain("extract/facts.system");
+    expect(run.provenance["BR-2"]).toEqual({ text: "facts-bin1", evidence: ["facts-bin1"] });
+    expect(run.provenance["OQ-3"]).toEqual({ text: "analysis", evidence: ["analysis"] });
+    expect(Object.keys(run.provenance)).toHaveLength(Object.values(run.counts as Record<string, number>).reduce((a, b) => a + b, 0));
   });
 
   test("on the last attempt invalid items become Rejected Items instead of failing the run", async () => {
