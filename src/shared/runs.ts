@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { StageName } from "../config.ts";
+import type { RunTelemetry } from "../telemetry/run-trace.ts";
 import type { OutputLanguage } from "./language.ts";
 
 /** Where Runs live unless `--out` says otherwise. */
@@ -36,6 +37,8 @@ export interface RunMeta {
   createdAt?: string;
   outputLanguage?: OutputLanguage;
   source?: RunSource;
+  /** Present when the Run was traced (ADR 0013). */
+  telemetry?: RunTelemetry;
 }
 
 export function readRunMeta(dir: string): RunMeta | undefined {

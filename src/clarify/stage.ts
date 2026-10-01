@@ -9,6 +9,8 @@ import { LANGUAGE_NAMES, type OutputLanguage } from "../shared/language.ts";
 import { savePrompt, writeJson, writeText, type BuiltPrompt } from "../shared/run-files.ts";
 import { readRunMeta, type RunSource } from "../shared/runs.ts";
 import { buildNudge, runTraced, validationFeedback } from "../shared/traced.ts";
+import { linksTo, runTelemetry, traceRun } from "../telemetry/run-trace.ts";
+import { captureContent, failSpan, inSpan } from "../telemetry/spans.ts";
 import { close, createState, inputError, item, openItems, recordAnswers, type UserInput } from "./agenda.ts";
 import { buildAligned } from "./aligned.ts";
 import { addConflicts, buildConsistencyPrompt, checkConflicts, conflictSides, newDecisions } from "./consistency.ts";
@@ -82,7 +84,26 @@ interface AgentRecord {
   cacheReadRatio: number;
 }
 
-export async function runClarify(opts: ClarifyOptions): Promise<ClarifyReport> {
+/**
+ * Runs this process's part of a Clarify Run as one trace (ADR 0013), linked to the Run's earlier traces and to the
+ * Extract Run it reads; without telemetry the span is a no-op.
+ */
+export function runClarify(opts: ClarifyOptions): Promise<ClarifyReport> {
+  const existing = readRunMeta(opts.runDir);
+  const upstreamDir = existing?.source?.kind === "run" ? existing.source.runDir : opts.sourceRunDir;
+  const upstream = upstreamDir ? readRunMeta(upstreamDir) : undefined;
+  return traceRun(
+    {
+      stage: "clarify",
+      runId: basename(opts.runDir),
+      links: [...linksTo(existing?.telemetry, "resumes"), ...linksTo(upstream?.telemetry, "upstream", "last")],
+      attributes: { "xplan.resumed": Boolean(existing && !opts.restart), ...(upstreamDir ? { "xplan.source.run_id": basename(upstreamDir) } : {}) },
+    },
+    () => clarify(opts),
+  );
+}
+
+async function clarify(opts: ClarifyOptions): Promise<ClarifyReport> {
   const { config, runDir, log } = opts;
   const now = opts.now ?? (() => new Date());
   const limits = { ...CLARIFY_LIMITS, batchSize: opts.batchSize ?? CLARIFY_LIMITS.batchSize, maxRounds: opts.maxRounds ?? CLARIFY_LIMITS.maxRounds };
@@ -153,6 +174,7 @@ export async function runClarify(opts: ClarifyOptions): Promise<ClarifyReport> {
 
   const lib = new PromptLibrary(config.promptsDir);
   const agents: AgentRecord[] = existing && !opts.restart ? ((existing as { agents?: AgentRecord[] }).agents ?? []) : [];
+  const earlierTraces = existing && !opts.restart ? existing.telemetry : undefined;
   const thinking = thinkingFor(config, "clarify");
   const reviewThinking = thinkingForRole(config, "review");
   const consistencyThinking = thinkingForRole(config, "consistency");
@@ -164,7 +186,8 @@ export async function runClarify(opts: ClarifyOptions): Promise<ClarifyReport> {
     writeJson(statePath, state);
     writeText(join(runDir, "02-transcript.md"), renderTranscript(state));
   };
-  const writeRun = (status: string) =>
+  const writeRun = (status: string) => {
+    const telemetry = runTelemetry(earlierTraces);
     writeJson(runPath, {
       status,
       stage: "clarify",
@@ -183,7 +206,9 @@ export async function runClarify(opts: ClarifyOptions): Promise<ClarifyReport> {
       rejectedCount: state.rejected.length,
       warnings,
       failures,
+      ...(telemetry ? { telemetry } : {}),
     });
+  };
   const fail = (message: string): ClarifyReport => {
     failures.push(message);
     save();
@@ -338,6 +363,14 @@ export async function runClarify(opts: ClarifyOptions): Promise<ClarifyReport> {
     return result;
   };
 
+  /** One round as a `clarify.round` span; `fn` returns the failure message, if any. */
+  const roundSpan = (n: number, final: boolean, fn: () => Promise<string | undefined>) =>
+    inSpan("clarify.round", { "xplan.round": n, "xplan.final": final }, async (span) => {
+      const failure = await fn();
+      if (failure) failSpan(span, failure);
+      return failure;
+    });
+
   save();
   writeRun("running");
 
@@ -362,17 +395,21 @@ export async function runClarify(opts: ClarifyOptions): Promise<ClarifyReport> {
         const termination: Termination = state.doneRequested ? "done" : "cap";
         if (termination === "cap") warnings.push(`Stopped after ${limits.maxRounds} rounds with ${openItems(state).length} item(s) still open`);
         if (state.agenda.some((i) => awaitsInterpretation(i.status))) {
-          log(`[clarify-final] interpreting the last Answers`);
-          const result = await runAgent<FinalSubmission>("clarify-final", buildFinalPrompt(lib, brief, state), true, []);
-          if (typeof result === "string") return fail(result);
-          const before = state;
-          state = applyRound(state, { n: state.rounds.length + 1, final: true, prepare: [], accepted: result.accepted, ordering: "", reviews: result.reviews });
-          const checked = await runConsistency("clarify-final-consistency", true);
-          if (typeof checked === "string") {
-            state = before;
-            return fail(checked);
-          }
-          state = checked;
+          const failed = await roundSpan(state.rounds.length + 1, true, async () => {
+            log(`[clarify-final] interpreting the last Answers`);
+            const result = await runAgent<FinalSubmission>("clarify-final", buildFinalPrompt(lib, brief, state), true, []);
+            if (typeof result === "string") return result;
+            const before = state;
+            state = applyRound(state, { n: state.rounds.length + 1, final: true, prepare: [], accepted: result.accepted, ordering: "", reviews: result.reviews });
+            const checked = await runConsistency("clarify-final-consistency", true);
+            if (typeof checked === "string") {
+              state = before;
+              return checked;
+            }
+            state = checked;
+            return undefined;
+          });
+          if (failed) return fail(failed);
         }
         state = close(state, termination);
         break;
@@ -384,38 +421,42 @@ export async function runClarify(opts: ClarifyOptions): Promise<ClarifyReport> {
       }
 
       const n = state.rounds.length + 1;
-      const pending = state.agenda.filter((i) => i.status === "pending").map((i) => i.id);
-      const selection = await orderer.selectPrepare(state, limits.batchSize);
-      const selectionErrors = checkSelection(selection.ids, pending, limits.batchSize);
-      if (selectionErrors.length) throw new Error(`Question orderer returned an invalid selection: ${selectionErrors.join("; ")}`);
-      if (!selection.ids.length && !state.agenda.some((i) => i.status === "answered")) {
-        throw new Error(`Nothing to ask or interpret, but ${openItems(state).map((i) => i.id).join(", ")} are still open`);
-      }
+      const failed = await roundSpan(n, false, async () => {
+        const pending = state.agenda.filter((i) => i.status === "pending").map((i) => i.id);
+        const selection = await orderer.selectPrepare(state, limits.batchSize);
+        const selectionErrors = checkSelection(selection.ids, pending, limits.batchSize);
+        if (selectionErrors.length) throw new Error(`Question orderer returned an invalid selection: ${selectionErrors.join("; ")}`);
+        if (!selection.ids.length && !state.agenda.some((i) => i.status === "answered")) {
+          throw new Error(`Nothing to ask or interpret, but ${openItems(state).map((i) => i.id).join(", ")} are still open`);
+        }
 
-      const label = `clarify-r${n}`;
-      log(`[${label}] interpreting ${state.agenda.filter((i) => i.status === "answered").length} Answer(s), preparing ${selection.ids.length} question(s)`);
-      const result = await runAgent<RoundSubmission>(label, buildRoundPrompt(lib, brief, state, selection.ids, { maxGaps: limits.maxGapsPerRound }), false, selection.ids);
-      if (typeof result === "string") return fail(result);
-      const before = state;
-      state = applyRound(state, { n, final: false, prepare: selection.ids, accepted: result.accepted, ordering: selection.rationale, reviews: result.reviews });
-      const checked = await runConsistency(`${label}-consistency`, false);
-      if (typeof checked === "string") {
-        state = before;
-        return fail(checked);
-      }
-      state = checked;
+        const label = `clarify-r${n}`;
+        log(`[${label}] interpreting ${state.agenda.filter((i) => i.status === "answered").length} Answer(s), preparing ${selection.ids.length} question(s)`);
+        const result = await runAgent<RoundSubmission>(label, buildRoundPrompt(lib, brief, state, selection.ids, { maxGaps: limits.maxGapsPerRound }), false, selection.ids);
+        if (typeof result === "string") return result;
+        const before = state;
+        state = applyRound(state, { n, final: false, prepare: selection.ids, accepted: result.accepted, ordering: selection.rationale, reviews: result.reviews });
+        const checked = await runConsistency(`${label}-consistency`, false);
+        if (typeof checked === "string") {
+          state = before;
+          return checked;
+        }
+        state = checked;
 
-      const candidates = {
-        conflicts: (state.rounds.at(-1)?.conflicts ?? []).filter((c) => c.status === "pending").map((c) => c.id),
-        followUps: result.accepted.followUps.filter((f) => f.origin === "follow-up").map((f) => f.id),
-        prepared: selection.ids.filter((id) => item(state, id).status === "pending" && result.accepted.prepared.some((p) => p.id === id)),
-        gaps: result.accepted.followUps.filter((f) => f.origin === "gherkin-gap").map((f) => f.id),
-      };
-      const batch = await orderer.composeBatch(state, candidates, limits.batchSize);
-      const batchErrors = checkSelection(batch.ids, [...candidates.conflicts, ...candidates.followUps, ...candidates.prepared, ...candidates.gaps], limits.batchSize);
-      if (batchErrors.length) throw new Error(`Question orderer returned an invalid batch: ${batchErrors.join("; ")}`);
-      state = markAsked(state, batch.ids, batch.rationale);
-      save();
+        const candidates = {
+          conflicts: (state.rounds.at(-1)?.conflicts ?? []).filter((c) => c.status === "pending").map((c) => c.id),
+          followUps: result.accepted.followUps.filter((f) => f.origin === "follow-up").map((f) => f.id),
+          prepared: selection.ids.filter((id) => item(state, id).status === "pending" && result.accepted.prepared.some((p) => p.id === id)),
+          gaps: result.accepted.followUps.filter((f) => f.origin === "gherkin-gap").map((f) => f.id),
+        };
+        const batch = await orderer.composeBatch(state, candidates, limits.batchSize);
+        const batchErrors = checkSelection(batch.ids, [...candidates.conflicts, ...candidates.followUps, ...candidates.prepared, ...candidates.gaps], limits.batchSize);
+        if (batchErrors.length) throw new Error(`Question orderer returned an invalid batch: ${batchErrors.join("; ")}`);
+        state = markAsked(state, batch.ids, batch.rationale);
+        save();
+        return undefined;
+      });
+      if (failed) return fail(failed);
     }
   } catch (error) {
     return fail(error instanceof Error ? error.message : String(error));
@@ -450,17 +491,29 @@ async function collectAnswers(brief: RequirementBrief, start: ClarifyState, answ
         ...(it.origin === "conflict" ? { sides: conflictSides(brief, state, it) } : {}),
       };
     });
-  await answerer.ask(questions, {
-    round: round.n,
-    record: (input: UserInput) => {
-      const error = inputError(state, input);
-      if (error) return error;
-      state = recordAnswers(state, [input], { via: answerer.via, at: now().toISOString() });
-      commit(state);
-      return undefined;
-    },
-  });
+  // Time spent waiting for a person: its own span, so latency figures can leave it out.
+  await inSpan("clarify.await_user", { "xplan.await_user": true, "xplan.round": round.n, "xplan.questions": questions.length, "xplan.answerer": answerer.via }, (span) =>
+    answerer.ask(questions, {
+      round: round.n,
+      record: (input: UserInput) => {
+        const error = inputError(state, input);
+        if (error) return error;
+        state = recordAnswers(state, [input], { via: answerer.via, at: now().toISOString() });
+        commit(state);
+        span.addEvent("xplan.input", inputAttributes(input));
+        return undefined;
+      },
+    }),
+  );
   if (state.phase === "answer") throw new Error(`The answerer stopped before answering ${state.agenda.filter((i) => i.status === "asked").map((i) => i.id).join(", ")}`);
+}
+
+/** What a span records of one input; the words themselves only with captureContent. */
+function inputAttributes(input: UserInput): Record<string, string> {
+  const text: Record<string, string> = "text" in input && captureContent() ? { "xplan.input.text": input.text } : {};
+  if (input.type === "response") return { "xplan.input.type": input.type, "xplan.input.item": input.itemId, "xplan.input.kind": input.kind, ...text };
+  if (input.type === "note") return { "xplan.input.type": input.type, ...(input.target ? { "xplan.input.item": input.target } : {}), ...text };
+  return { "xplan.input.type": input.type };
 }
 
 function countStatuses(state: ClarifyState): Record<string, number> {

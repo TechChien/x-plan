@@ -62,6 +62,15 @@ export function interruptOpenSpans(): void {
   open.clear();
 }
 
+/** Ends every open span except `keep`, as a step that was never finished. */
+export function closeOpenSpans(keep: Span): void {
+  for (const span of open) {
+    if (span === keep) continue;
+    failSpan(span, "not finished");
+    endSpan(span);
+  }
+}
+
 /** Runs `fn` with `span` as the active span, e.g. a check executed on behalf of a tool call. */
 export function withSpan<T>(span: Span, fn: () => Promise<T>): Promise<T> {
   return context.with(trace.setSpan(context.active(), span), fn);

@@ -1,5 +1,5 @@
 import { mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import type { SubmitTask, TaskMetrics, TaskOutcome } from "../agent/submit-task.ts";
 import type { AgentBackend } from "../agent/types.ts";
 import { thinkingFor, type XPlanConfig } from "../config.ts";
@@ -14,6 +14,8 @@ import { mergeFacts } from "./merge.ts";
 import { buildProvenance } from "./provenance.ts";
 import { savePrompt, writeJson, writeText, type BuiltPrompt } from "../shared/run-files.ts";
 import { buildNudge, runTraced, validationFeedback } from "../shared/traced.ts";
+import { runTelemetry, traceRun } from "../telemetry/run-trace.ts";
+import { endSpan, startSpan } from "../telemetry/spans.ts";
 import { buildAnalysisPrompt, buildFactsPrompt, buildFactsSystemPrompt } from "./prompts.ts";
 import { renderBriefMarkdown } from "./render.ts";
 import {
@@ -69,7 +71,12 @@ interface AgentRecord {
   metrics: TaskMetrics;
 }
 
-export async function runExtract(opts: ExtractOptions): Promise<ExtractReport> {
+/** Runs Extract as one trace (ADR 0013); without telemetry the span is a no-op. */
+export function runExtract(opts: ExtractOptions): Promise<ExtractReport> {
+  return traceRun({ stage: "extract", runId: basename(opts.runDir), attributes: { "xplan.dry_run": Boolean(opts.dryRun) } }, () => extract(opts));
+}
+
+async function extract(opts: ExtractOptions): Promise<ExtractReport> {
   const { config, runDir, log } = opts;
   const sections = opts.sections ?? FACT_SECTION_NAMES;
   const warnings: string[] = [];
@@ -79,6 +86,7 @@ export async function runExtract(opts: ExtractOptions): Promise<ExtractReport> {
   mkdirSync(runDir, { recursive: true });
 
   // Scan and convert.
+  const prepare = startSpan("extract.prepare", {});
   const scan = await scanDirectory(opts.dir, { include: opts.include, exclude: opts.exclude, reference: opts.reference });
   if (!scan.files.length) throw new Error(`No supported documents (.md .txt .pdf .docx) found in ${opts.dir}`);
   if (scan.reference.length === scan.files.length) throw new Error("Every document is a Reference Document; at least one requirement document is needed");
@@ -117,6 +125,9 @@ export async function runExtract(opts: ExtractOptions): Promise<ExtractReport> {
     warnings.push(`Batch(es) ${blind.join(", ")} hold only Reference Documents without the requirement documents (too large to repeat); relevance cannot be judged there`);
   }
 
+  prepare.setAttributes({ "xplan.files": sources.length, "xplan.reference_files": reference.size, "xplan.bins": bins.length, "xplan.budget_tokens": budget });
+  endSpan(prepare);
+
   const factsPrompts = bins.map((bin) => buildFactsPrompt(lib, { bin, totalBins: bins.length, allFiles, sections, hasReferences, language }));
   bins.forEach((bin, i) => savePrompt(runDir, `facts-bin${bin.index}`, factsPrompts[i] as BuiltPrompt));
 
@@ -147,6 +158,7 @@ export async function runExtract(opts: ExtractOptions): Promise<ExtractReport> {
       warnings,
       failures,
       ...extra,
+      ...withTelemetry(),
     });
 
   if (opts.dryRun) {
@@ -215,7 +227,10 @@ export async function runExtract(opts: ExtractOptions): Promise<ExtractReport> {
   }
 
   // Merge.
+  const mergeSpan = startSpan("extract.merge", {});
   const merged = mergeFacts(perBin);
+  mergeSpan.setAttributes({ "xplan.items": countItems(merged.facts), "xplan.deduped": merged.deduped.size });
+  endSpan(mergeSpan);
   const idMaps = Object.fromEntries(merged.idMaps.map((map, i) => [`facts-bin${bins[i]!.index}`, Object.fromEntries(map)]));
   const submittedItems = countItems(merged.facts) + merged.deduped.size + rejected.length;
   log(`Merged: ${countItems(merged.facts)} item(s), ${merged.deduped.size} exact-name duplicate(s) folded`);
@@ -320,6 +335,11 @@ function countOps(ops: AnalysisSubmission): number {
 
 function countBySection(brief: RequirementBrief): Record<string, number> {
   return Object.fromEntries(Object.entries(brief).filter(([k]) => k !== "traceability").map(([k, v]) => [k, (v as unknown[]).length]));
+}
+
+function withTelemetry(): { telemetry?: ReturnType<typeof runTelemetry> } {
+  const telemetry = runTelemetry();
+  return telemetry ? { telemetry } : {};
 }
 
 function binSummary(bin: Bin) {

@@ -11,8 +11,10 @@ import { replay } from "../src/clarify/apply.ts";
 import type { ClarifyState, DecisionOp, Prepared, RoundSubmission } from "../src/clarify/schema.ts";
 import { runClarify, type ClarifyOptions } from "../src/clarify/stage.ts";
 import { parseConfig } from "../src/config.ts";
+import { startTelemetry } from "../src/telemetry/setup.ts";
 import { returnsBrief } from "./helpers/brief.ts";
 import { approvingReview, noConflicts, ScriptedBackend, type ScriptedTurn } from "./helpers/scripted-backend.ts";
+import { CollectingExporter } from "./helpers/spans.ts";
 
 const config = parseConfig({ provider: { baseUrl: "http://unused" } });
 
@@ -481,5 +483,58 @@ describe("Consistency Check", () => {
 
     const retried = await runClarify(options(dir, backend([[second]]), answers));
     expect(retried).toMatchObject({ status: "succeeded", termination: "converged" });
+  });
+});
+
+describe("runClarify with telemetry", () => {
+  const traced = { ...config, telemetry: { enabled: true } };
+
+  test("rounds, reviews and waits for the user are spans; a resume is a new trace linked to the earlier one", async () => {
+    const dir = runDir();
+    const upstream = { traceId: "a".repeat(32), rootSpanId: "b".repeat(16), startedAt: "2026-09-30T15:00:00Z", spans: {} };
+    writeFileSync(join(dir.extract, "run.json"), JSON.stringify({ stage: "extract", status: "succeeded", outputLanguage: "zh", telemetry: { traces: [upstream] } }));
+    const scripts = happyScripts();
+    let answered = 0;
+    const flaky = (q: AskedQuestion) => {
+      if (++answered === 3) throw new Error("terminal closed");
+      return happyAnswers(q);
+    };
+
+    const first = new CollectingExporter();
+    let telemetry = await startTelemetry(traced, { log: () => {}, env: {}, exporter: first });
+    await runClarify(options(dir, backend(scripts), flaky));
+    await telemetry.shutdown();
+
+    const root1 = first.one("x-plan clarify");
+    expect(root1.attributes).toMatchObject({ "xplan.run.id": "clarify-20260930-1600-bbbbbb", "xplan.source.run_id": "extract-20260930-1500-aaaaaa", "xplan.resumed": false });
+    expect(root1.links.map((l) => [l.context.traceId, l.attributes?.["xplan.link"]])).toEqual([[upstream.traceId, "upstream"]]);
+    expect(first.parentOf(first.one("invoke_agent clarify-r1"))).toBe(first.one("clarify.round"));
+    const wait = first.one("clarify.await_user");
+    expect(wait.attributes).toMatchObject({ "xplan.await_user": true, "xplan.round": 1, "xplan.questions": 5 });
+    expect(wait.events.map((e) => e.attributes)).toEqual([
+      { "xplan.input.type": "response", "xplan.input.item": "CTR-1", "xplan.input.kind": "text" },
+      { "xplan.input.type": "response", "xplan.input.item": "OQ-1", "xplan.input.kind": "na" },
+    ]);
+    expect(wait.status.code).toBe(2);
+
+    const second = new CollectingExporter();
+    telemetry = await startTelemetry(traced, { log: () => {}, env: {}, exporter: second });
+    const resumed = await runClarify(options(dir, backend(scripts.slice(1)), happyAnswers));
+    await telemetry.shutdown();
+    expect(resumed.status).toBe("succeeded");
+
+    const root2 = second.one("x-plan clarify");
+    expect(root2.attributes["xplan.resumed"]).toBe(true);
+    expect(root2.links.map((l) => [l.context.traceId, l.attributes?.["xplan.link"]])).toEqual([
+      [root1.spanContext().traceId, "resumes"],
+      [upstream.traceId, "upstream"],
+    ]);
+    const review = second.one("invoke_agent clarify-r2-review1");
+    expect(second.parentOf(review)!.name).toBe("execute_tool submit_round");
+    expect(second.parentOf(second.parentOf(review)!)!.name).toBe("invoke_agent clarify-r2");
+
+    const run = readJson<{ telemetry: { traces: { traceId: string; spans: Record<string, string> }[] } }>(join(dir.clarify, "run.json"));
+    expect(run.telemetry.traces.map((t) => t.traceId)).toEqual([root1.spanContext().traceId, root2.spanContext().traceId]);
+    expect(Object.keys(run.telemetry.traces[1]!.spans)).toContain("clarify-r2-review1");
   });
 });

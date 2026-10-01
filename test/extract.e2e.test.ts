@@ -1,12 +1,14 @@
 import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { parseConfig } from "../src/config.ts";
 import type { RequirementBrief } from "../src/extract/schema.ts";
 import { runExtract } from "../src/extract/stage.ts";
 import { ev } from "./helpers/facts.ts";
+import { startTelemetry } from "../src/telemetry/setup.ts";
 import { ScriptedBackend, type ScriptedTurn } from "./helpers/scripted-backend.ts";
+import { CollectingExporter } from "./helpers/spans.ts";
 
 const FIXTURE = join(import.meta.dirname, "fixtures", "returns");
 /** The fixture and the scripted facts are Traditional Chinese. */
@@ -188,5 +190,51 @@ describe("runExtract end to end (scripted agents)", () => {
     });
     expect(report.status).toBe("dry-run");
     expect(readFileSync(join(dir, "prompts", "facts-bin1.user.md"), "utf8")).toContain('<document path="faq.md">');
+  });
+});
+
+describe("runExtract with telemetry", () => {
+  test("one trace: root, prepare, an agent span per task, merge; run.json maps each task to its span", async () => {
+    const exporter = new CollectingExporter();
+    const telemetry = await startTelemetry({ ...config, telemetry: { enabled: true } }, { log: () => {}, env: {}, exporter });
+    const dir = runDir();
+    const fake = backend([{ call: facts("A: 可以，下單後 7 天內都可以取消喔。") }]);
+    const report = await runExtract({ dir: FIXTURE, runDir: dir, config, backend: async () => fake, log: () => {} });
+    await telemetry.shutdown();
+    expect(report.status).toBe("succeeded");
+
+    const root = exporter.one("x-plan extract");
+    expect(root.attributes).toMatchObject({ "xplan.stage": "extract", "xplan.run.id": basename(dir), "session.id": basename(dir) });
+    for (const name of ["extract.prepare", "invoke_agent facts-bin1", "extract.merge", "invoke_agent analysis"]) {
+      expect(exporter.parentOf(exporter.one(name)), name).toBe(root);
+    }
+    expect(exporter.one("extract.prepare").attributes).toMatchObject({ "xplan.files": 2, "xplan.bins": 1 });
+
+    const run = JSON.parse(readFileSync(join(dir, "run.json"), "utf8"));
+    expect(run.telemetry).toEqual({
+      traces: [
+        {
+          traceId: root.spanContext().traceId,
+          rootSpanId: root.spanContext().spanId,
+          startedAt: expect.any(String),
+          spans: {
+            "facts-bin1": exporter.one("invoke_agent facts-bin1").spanContext().spanId,
+            analysis: exporter.one("invoke_agent analysis").spanContext().spanId,
+          },
+        },
+      ],
+    });
+  });
+
+  test("a failed Run marks the root failed; without telemetry run.json has no telemetry", async () => {
+    const exporter = new CollectingExporter();
+    const telemetry = await startTelemetry({ ...config, telemetry: { enabled: true } }, { log: () => {}, env: {}, exporter });
+    await runExtract({ dir: FIXTURE, runDir: runDir(), config, backend: async () => backend([{ text: "a" }, { text: "b" }, { text: "c" }]), log: () => {} });
+    await telemetry.shutdown();
+    expect(exporter.one("x-plan extract").status).toMatchObject({ code: 2, message: expect.stringMatching(/facts-bin1 failed \(no-submit\)/) });
+
+    const dir = runDir();
+    await runExtract({ dir: FIXTURE, runDir: dir, config, backend: async () => backend([{ call: facts("A: 可以，下單後 7 天內都可以取消喔。") }]), log: () => {} });
+    expect(JSON.parse(readFileSync(join(dir, "run.json"), "utf8")).telemetry).toBeUndefined();
   });
 });

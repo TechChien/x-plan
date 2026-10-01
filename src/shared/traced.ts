@@ -3,6 +3,7 @@ import { TraceRecorder } from "../agent/trace.ts";
 import type { AgentBackend } from "../agent/types.ts";
 import type { PromptLibrary } from "../prompts/template.ts";
 import { agentAttributes, AgentSpanRecorder } from "../telemetry/agent-spans.ts";
+import { recordAgentSpan } from "../telemetry/run-trace.ts";
 import { inSpan } from "../telemetry/spans.ts";
 
 /**
@@ -11,6 +12,7 @@ import { inSpan } from "../telemetry/spans.ts";
  */
 export async function runTraced<P, R>(backend: AgentBackend, task: SubmitTask<P, R>, traceDir: string): Promise<TaskOutcome<R>> {
   return inSpan(`invoke_agent ${task.label}`, agentAttributes(task as SubmitTask<unknown, unknown>), async (span) => {
+    recordAgentSpan(task.label, span);
     const trace = new TraceRecorder(traceDir, task.label);
     const spans = new AgentSpanRecorder(span, backend.model);
     const outcome = await runSubmitTask(backend, task, {
