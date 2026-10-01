@@ -23,6 +23,8 @@ export interface CaseScore {
   questions: QuestionScore;
   /** `unexpected` labels that matched, with the matching item ids, out of `labels`. */
   noise: { hits: { label: string; itemIds: string[] }[]; labels: number };
+  /** `shouldNotDuplicate` labels hit: assumptions that state the answer to an open question. */
+  duplicateAssumptions: { label: string; itemIds: string[] }[];
   /** Items in the Brief, every section. */
   items: number;
 }
@@ -72,7 +74,19 @@ export function scoreCase(expected: Expected, brief: RequirementBrief): CaseScor
   }
   const items = itemSections.reduce((n, s) => n + (sections[s]?.length ?? 0), 0);
 
-  return { recall, contradictions, questions: scoreQuestions(expected, brief.openQuestions), noise: { hits, labels: expected.unexpected?.length ?? 0 }, items };
+  // Only the statement counts: a rationale may name the same thing while assuming something else.
+  const duplicateAssumptions = (expected.assumptions?.shouldNotDuplicate ?? [])
+    .map((l) => ({ label: l.id, itemIds: brief.assumptions.filter((a) => l.any.some((k) => has(normalize(a.assumption).toLowerCase(), k))).map((a) => a.id) }))
+    .filter((d) => d.itemIds.length);
+
+  return {
+    recall,
+    contradictions,
+    questions: scoreQuestions(expected, brief.openQuestions),
+    noise: { hits, labels: expected.unexpected?.length ?? 0 },
+    duplicateAssumptions,
+    items,
+  };
 }
 
 /** Open questions are never removed by Analysis, so the Brief's questions are everything that was raised. */

@@ -128,8 +128,8 @@ export function renderReport(results: RunResult[]): string {
   out.push(
     "## 總覽",
     "",
-    "| case | 成功 | 召回率 | 矛盾偵測 | 真問題提出 | 多餘問題 | 雜訊 | 條目數 | Rejected | 交卷次數 (schema/check 錯) | nudges | tokens in/out/reasoning |",
-    "|---|---|---|---|---|---|---|---|---|---|---|---|",
+    "| case | 成功 | 召回率 | 矛盾偵測 | 真問題提出 | 多餘問題 | 雜訊 | 重複假設 | 條目數 | Rejected | 交卷次數 (schema/check 錯) | nudges | tokens in/out/reasoning |",
+    "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
   );
   for (const name of cases) {
     const rs = results.filter((r) => r.caseName === name);
@@ -143,15 +143,16 @@ export function renderReport(results: RunResult[]): string {
     const qRaised = scored.reduce((n, r) => n + r.score!.questions.raised.length, 0);
     const qTotal = scored.reduce((n, r) => n + r.score!.questions.raised.length + r.score!.questions.neverRaised.length, 0);
     const unwanted = scored.reduce((n, r) => n + r.score!.questions.unwanted.reduce((k, u) => k + u.questions.length, 0), 0);
+    const duplicates = scored.reduce((n, r) => n + r.score!.duplicateAssumptions.reduce((k, d) => k + d.itemIds.length, 0), 0);
     const items = scored.length ? avg(scored.map((r) => r.score!.items)) : "—";
     const m = (f: (x: RunMetrics) => number) => avg(rs.map((r) => f(r.metrics)));
     out.push(
-      `| ${name} | ${rs.filter((r) => r.status === "succeeded").length}/${rs.length} | ${pct(found, total)} | ${pct(cFound, cTotal)} | ${pct(qRaised, qTotal)} | ${unwanted} | ${pct(nHit, nTotal)} | ${items} | ${avg(rs.map((r) => r.rejectedCount))} | ${m((x) => x.submitAttempts)} (${m((x) => x.schemaFailures)}/${m((x) => x.checkFailures)}) | ${m((x) => x.nudges)} | ${m((x) => x.inputTokens)}/${m((x) => x.outputTokens)}/${m((x) => x.reasoningTokens)} |`,
+      `| ${name} | ${rs.filter((r) => r.status === "succeeded").length}/${rs.length} | ${pct(found, total)} | ${pct(cFound, cTotal)} | ${pct(qRaised, qTotal)} | ${unwanted} | ${pct(nHit, nTotal)} | ${duplicates} | ${items} | ${avg(rs.map((r) => r.rejectedCount))} | ${m((x) => x.submitAttempts)} (${m((x) => x.schemaFailures)}/${m((x) => x.checkFailures)}) | ${m((x) => x.nudges)} | ${m((x) => x.inputTokens)}/${m((x) => x.outputTokens)}/${m((x) => x.reasoningTokens)} |`,
     );
   }
   out.push(
     "",
-    "_數值為各次執行的平均；召回率、矛盾偵測、真問題提出與雜訊為所有執行合計。真問題是 `mustBeRaised` 標籤被提出的比例；多餘問題是命中 `shouldNotBeRaised` 的問題總數；雜訊是 `unexpected` 標籤的命中率。後兩者越低越好。_",
+    "_數值為各次執行的平均；召回率、矛盾偵測、真問題提出與雜訊為所有執行合計。真問題是 `mustBeRaised` 標籤被提出的比例；多餘問題是命中 `shouldNotBeRaised` 的問題總數；雜訊是 `unexpected` 標籤的命中率；重複假設是寫出某個 Open Question 答案的 Assumption 總數（`assumptions.shouldNotDuplicate`）。後三者越低越好。_",
     "",
   );
 
@@ -169,6 +170,7 @@ export function renderReport(results: RunResult[]): string {
     if (s.questions.neverRaised.length) out.push(`- 未提出的真問題：${s.questions.neverRaised.join(", ")}`);
     for (const u of s.questions.unwanted) out.push(`- 多餘問題 [${u.label}] ${u.questions.map((q) => `${q.id}「${q.question}」`).join("、")}`);
     for (const n of s.noise.hits) out.push(`- 雜訊 [${n.label}] ${n.itemIds.join(", ")}`);
+    for (const d of s.duplicateAssumptions) out.push(`- 重複假設 [${d.label}] ${d.itemIds.join(", ")}`);
     out.push("");
   }
   const hashes = results.find((r) => Object.keys(r.promptHashes).length)?.promptHashes;

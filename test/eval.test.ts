@@ -97,6 +97,38 @@ describe("scoreCase", () => {
     expect(score.noise).toEqual({ hits: [{ label: "dealer", itemIds: ["ACT-1"] }], labels: 3 });
     expect(score.items).toBe(2);
   });
+
+  test("duplicate assumptions: an assumption stating the answer to a labelled open question, matched on its statement only", () => {
+    const asm = (id: string, assumption: string, rationale: string) => ({ id, assumption, rationale, confidence: "high" as const, relatedIds: [] });
+    const brief: RequirementBrief = {
+      ...emptyFacts(),
+      contradictions: [],
+      assumptions: [
+        asm("ASM-1", "admyn_id is the AdminUUID value", "only tenant field"),
+        asm("ASM-2", "One POST per tenant", "the body carries a single admyn_id"),
+        asm("ASM-3", "dcnt counts distinct devices", "BR-2 counts devices"),
+      ],
+      traceability: [],
+    };
+    const score = scoreCase(
+      {
+        expect: [],
+        assumptions: {
+          shouldNotDuplicate: [
+            { id: "admyn-id-mapping", any: ["admyn_id"] },
+            { id: "count-unit", any: ["distinct", "unique device"] },
+            { id: "hardware", any: ["hardware"] },
+          ],
+        },
+      },
+      brief,
+    );
+    // ASM-2 mentions admyn_id only in its rationale, so it is not a duplicate.
+    expect(score.duplicateAssumptions).toEqual([
+      { label: "admyn-id-mapping", itemIds: ["ASM-1"] },
+      { label: "count-unit", itemIds: ["ASM-3"] },
+    ]);
+  });
 });
 
 describe("eval cases", () => {

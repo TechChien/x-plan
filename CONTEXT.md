@@ -103,7 +103,7 @@ _Avoid_: Issue, TODO, gap
 _Avoid_: Conflict, inconsistency
 
 **Assumption**:
-原文未明寫、由模型推論而來的內容；唯一允許不附 Evidence 的條目，必須與有原文依據的事實分開存放。
+原文未明寫、由模型推論而來的內容；唯一允許不附 Evidence 的條目，必須與有原文依據的事實分開存放。Open Question 的推測答案不寫成 Assumption，問題留給使用者回答。
 _Avoid_: Guess, inference
 
 ## 對齊

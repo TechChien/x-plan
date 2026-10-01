@@ -27,3 +27,9 @@ openQuestions:
     - { id: shipped-order, any: ["出貨"] }
     - { id: return-shipping-fee, any: ["運費"] }
     - { id: appraisal-period, any: ["鑑賞期"] }
+
+assumptions:
+  shouldNotDuplicate:
+    - { id: shipped-order, any: ["出貨"] }
+    - { id: return-shipping-fee, any: ["運費"] }
+    - { id: appraisal-period, any: ["鑑賞期"] }

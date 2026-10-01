@@ -37,6 +37,15 @@ export const ExpectedSchema = Type.Object({
       shouldNotBeRaised: Type.Optional(Type.Array(QuestionLabel)),
     }),
   ),
+  assumptions: Type.Optional(
+    Type.Object({
+      /**
+       * Open questions whose answer Analysis must not write down as an Assumption (the question stays and the user
+       * answers it in Clarify). Hit when an assumption's statement contains ANY keyword.
+       */
+      shouldNotDuplicate: Type.Optional(Type.Array(QuestionLabel)),
+    }),
+  ),
   /**
    * Noise: content the Brief should not contain, such as reference material the requirements do not need.
    * Hit when an item in one of `section` (default: every section) contains ANY keyword.
