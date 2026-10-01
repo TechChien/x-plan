@@ -39,6 +39,22 @@ export const ConfigSchema = Type.Object({
   promptsDir: Type.Optional(Type.String()),
   /** Language of everything x-plan writes: en (default), zh (Traditional Chinese), cn (Simplified Chinese). */
   outputLanguage: Type.Optional(Type.Union(OUTPUT_LANGUAGES.map((l) => Type.Literal(l)))),
+  /** OpenTelemetry tracing (ADR 0013). Off unless enabled here or an OTLP endpoint is set in the environment. */
+  telemetry: Type.Optional(
+    Type.Object({
+      enabled: Type.Optional(Type.Boolean()),
+      /** Also send prompts, reasoning, tool arguments and the user's answers; off by default, documents may be confidential. */
+      captureContent: Type.Optional(Type.Boolean()),
+    }),
+  ),
+  /** A Langfuse instance: where traces go when no OTLP endpoint is set, and where Feedback is mirrored as scores. */
+  langfuse: Type.Optional(
+    Type.Object({
+      baseUrl: Type.String(),
+      publicKeyEnv: Type.String({ default: "LANGFUSE_PUBLIC_KEY" }),
+      secretKeyEnv: Type.String({ default: "LANGFUSE_SECRET_KEY" }),
+    }),
+  ),
 });
 export type XPlanConfig = Static<typeof ConfigSchema>;
 

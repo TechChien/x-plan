@@ -9,6 +9,7 @@ import { findConfigPath, loadConfig, parseConfig, type XPlanConfig } from "./con
 import { OUTPUT_LANGUAGES, type OutputLanguage } from "./shared/language.ts";
 import { newRunId, readRunMeta, resolveRunDir, runsDir } from "./shared/runs.ts";
 import { runExtract } from "./extract/stage.ts";
+import { startTelemetry } from "./telemetry/setup.ts";
 
 const program = new Command();
 program.name("x-plan").description("Turn requirement documents into BDD (Gherkin) specs");
@@ -41,7 +42,7 @@ program
     const log = (message: string) => console.error(`x-plan: ${message}`);
     log(`Run directory: ${runDir}`);
 
-    const report = await runExtract({
+    const report = await withTelemetry(config, log, () => runExtract({
       dir,
       runDir,
       config,
@@ -52,7 +53,7 @@ program
       dryRun: opts.dryRun,
       backend: () => PiBackend.create(config, runDir),
       log,
-    });
+    }));
 
     for (const w of report.warnings) log(`warning: ${w}`);
     for (const f of report.failures) log(`FAILED: ${f}`);
@@ -99,7 +100,7 @@ program
       const log = (message: string) => console.error(`x-plan: ${message}`);
       log(`Run directory: ${runDir}`);
 
-      const report = await runClarify({
+      const report = await withTelemetry(config, log, () => runClarify({
         runDir,
         sourceRunDir,
         allowFailedExtract: opts.allowFailedExtract,
@@ -111,7 +112,7 @@ program
         answerer: new TtyAnswerer(),
         backend: () => PiBackend.create(config, runDir),
         log,
-      });
+      }));
 
       for (const w of report.warnings) log(`warning: ${w}`);
       for (const f of report.failures) log(`FAILED: ${f}`);
@@ -121,6 +122,16 @@ program
       if (report.status === "failed") process.exitCode = 1;
     },
   );
+
+/** Traces `fn` when telemetry is on (ADR 0013); spans are flushed before the command returns. */
+async function withTelemetry<T>(config: XPlanConfig, log: (message: string) => void, fn: () => Promise<T>): Promise<T> {
+  const telemetry = await startTelemetry(config, { log, handleSignals: true });
+  try {
+    return await fn();
+  } finally {
+    await telemetry.shutdown();
+  }
+}
 
 function positiveInt(value: string): number {
   const n = Number(value);
