@@ -142,8 +142,8 @@ export function renderClarifyReport(results: ClarifyRunResult[]): string {
   out.push(
     "## 總覽",
     "",
-    "| case | 成功 | 解讀正確 | 錯誤推翻 | 追問召回 | 多餘追問 | gap 召回 | 雜訊題 | 建議命中 | 自行作答攔截 | Round | 結束 | 交卷 (check 錯) | cache 命中 | tokens in/out |",
-    "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+    "| case | 成功 | 解讀正確 | 錯誤推翻 | 追問召回 | 多餘追問 | gap 召回 | 雜訊題 | 建議命中 | 自行作答攔截 | Review 攔下 (多加/部分/離題) | Round | 結束 | 交卷 (check 錯) | cache 命中 | tokens in/out |",
+    "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
   );
   for (const name of cases) {
     const rs = results.filter((r) => r.caseName === name);
@@ -152,12 +152,12 @@ export function renderClarifyReport(results: ClarifyRunResult[]): string {
     const m = (f: (x: ClarifyRunResult["metrics"]) => number) => avg(rs.map((r) => f(r.metrics)));
     const terminations = [...new Set(s.map((x) => x.termination ?? "—"))].join("/");
     out.push(
-      `| ${name} | ${rs.filter((r) => r.status === "succeeded").length}/${rs.length} | ${pct(sum((x) => x.interpretation.hit.length), sum((x) => x.interpretation.hit.length + x.interpretation.missed.length))} | ${sum((x) => x.wrongSupersedes.length)} | ${pct(sum((x) => x.followUps.raised.length), sum((x) => x.followUps.raised.length + x.followUps.missed.length))} | ${sum((x) => x.followUps.unneeded.reduce((n, u) => n + u.questions.length, 0))} | ${pct(sum((x) => x.gaps.raised.length), sum((x) => x.gaps.raised.length + x.gaps.missed.length))} | ${sum((x) => x.noise.length)} | ${pct(sum((x) => x.recommendations.good.length), sum((x) => x.recommendations.good.length + x.recommendations.bad.length))} | ${sum((x) => x.selfAnswerBlocked)} | ${avg(s.map((x) => x.rounds))} | ${terminations} | ${m((x) => x.submitAttempts)} (${m((x) => x.checkFailures)}) | ${m((x) => x.cacheReadRatio)} | ${m((x) => x.inputTokens)}/${m((x) => x.outputTokens)} |`,
+      `| ${name} | ${rs.filter((r) => r.status === "succeeded").length}/${rs.length} | ${pct(sum((x) => x.interpretation.hit.length), sum((x) => x.interpretation.hit.length + x.interpretation.missed.length))} | ${sum((x) => x.wrongSupersedes.length)} | ${pct(sum((x) => x.followUps.raised.length), sum((x) => x.followUps.raised.length + x.followUps.missed.length))} | ${sum((x) => x.followUps.unneeded.reduce((n, u) => n + u.questions.length, 0))} | ${pct(sum((x) => x.gaps.raised.length), sum((x) => x.gaps.raised.length + x.gaps.missed.length))} | ${sum((x) => x.noise.length)} | ${pct(sum((x) => x.recommendations.good.length), sum((x) => x.recommendations.good.length + x.recommendations.bad.length))} | ${sum((x) => x.selfAnswerBlocked)} | ${sum((x) => x.review.embellished)}/${sum((x) => x.review.partial)}/${sum((x) => x.review.offTopic)} | ${avg(s.map((x) => x.rounds))} | ${terminations} | ${m((x) => x.submitAttempts)} (${m((x) => x.checkFailures)}) | ${m((x) => x.cacheReadRatio)} | ${m((x) => x.inputTokens)}/${m((x) => x.outputTokens)} |`,
     );
   }
   out.push(
     "",
-    "_比例為所有執行合計，其餘為平均。錯誤推翻、多餘追問、雜訊題、自行作答攔截越低越好；cache 命中不含第 1 Round。_",
+    "_比例為所有執行合計，其餘為平均。錯誤推翻、多餘追問、雜訊題、自行作答攔截越低越好；Review 攔下是 Grounding Review 退回的 Decision 數（每次交卷分別計），越低代表 interpreter 第一次就寫對；cache 命中不含第 1 Round。_",
     "",
     "## 明細",
     "",

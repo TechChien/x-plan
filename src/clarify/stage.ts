@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import type { TaskMetrics, TaskOutcome } from "../agent/submit-task.ts";
 import type { AgentBackend } from "../agent/types.ts";
-import { thinkingFor, type XPlanConfig } from "../config.ts";
+import { thinkingFor, thinkingForRole, type XPlanConfig } from "../config.ts";
 import type { RequirementBrief } from "../extract/schema.ts";
 import { PromptLibrary, sha256 } from "../prompts/template.ts";
 import { LANGUAGE_NAMES, type OutputLanguage } from "../shared/language.ts";
@@ -17,6 +17,7 @@ import { checkRound, formatRoundIssues, type RoundCheckResult } from "./check.ts
 import { checkSelection, ruleOrderer, type QuestionOrderer } from "./ordering.ts";
 import { buildFinalPrompt, buildRoundPrompt } from "./prompts.ts";
 import { renderAlignedMarkdown, renderTranscript } from "./render.ts";
+import { buildReviewPrompt, judgeReview, reviewErrors, ReviewSubmissionSchema, underReview, withoutFlagged, type ReviewSubmission, type UnderReview } from "./review.ts";
 import {
   awaitsInterpretation,
   CLARIFY_LIMITS,
@@ -24,9 +25,13 @@ import {
   RoundSubmissionSchema,
   type ClarifyState,
   type FinalSubmission,
+  type ReviewRecord,
   type RoundSubmission,
   type Termination,
 } from "./schema.ts";
+
+/** A round's accepted result after Grounding Review, with the review's findings. */
+type ReviewedRound = RoundCheckResult & { reviews: ReviewRecord[] };
 
 /** Submit calls per round: the first plus two retries, as in Extract. */
 export const MAX_SUBMIT_ATTEMPTS = 3;
@@ -145,6 +150,7 @@ export async function runClarify(opts: ClarifyOptions): Promise<ClarifyReport> {
   const lib = new PromptLibrary(config.promptsDir);
   const agents: AgentRecord[] = existing && !opts.restart ? ((existing as { agents?: AgentRecord[] }).agents ?? []) : [];
   const thinking = thinkingFor(config, "clarify");
+  const reviewThinking = thinkingForRole(config, "review");
   const traceDir = join(runDir, "traces");
   let backend: AgentBackend | undefined;
   const getBackend = async () => (backend ??= await opts.backend());
@@ -180,17 +186,64 @@ export async function runClarify(opts: ClarifyOptions): Promise<ClarifyReport> {
     return { status: "failed", failures, warnings, runDir };
   };
 
-  /** Runs one round's agent; returns the accepted check result, or the failure message. */
+  const recordAgent = (label: string, outcome: TaskOutcome<unknown>) => {
+    const input = outcome.metrics.tokens.input;
+    agents.push({
+      label,
+      status: outcome.status,
+      ...(outcome.status === "failed" ? { reason: outcome.reason } : {}),
+      metrics: outcome.metrics,
+      cacheReadRatio: input ? Number((outcome.metrics.tokens.cacheRead / input).toFixed(3)) : 0,
+    });
+  };
+
+  /** Grounding Review of the Decisions in one submission (ADR 0011); returns the findings, or the failure message. */
+  const runReview = async (label: string, items: UnderReview[]): Promise<ReviewSubmission | string> => {
+    const prompt = buildReviewPrompt(lib, brief, state, items);
+    savePrompt(runDir, label, prompt);
+    const outcome = await runTraced<ReviewSubmission, ReviewSubmission>(
+      await getBackend(),
+      {
+        label,
+        ...prompt,
+        nudge: buildNudge(lib, "submit_review"),
+        thinking: reviewThinking,
+        maxSubmitAttempts: MAX_SUBMIT_ATTEMPTS,
+        maxNudges: MAX_NUDGES,
+        tool: {
+          name: "submit_review",
+          description: "Submit your review of every Decision. Call exactly once; call again with the complete corrected result if errors are returned.",
+          parameters: ReviewSubmissionSchema,
+          check: (params) => {
+            const errors = reviewErrors(params, items);
+            return errors.length ? { retry: validationFeedback(lib, "submit_review", errors.map((e) => `- ${e}`).join("\n"), errors.length) } : { accept: params };
+          },
+        },
+      },
+      traceDir,
+    );
+    recordAgent(label, outcome);
+    return outcome.status === "failed" ? `${label} failed (${outcome.reason}): ${outcome.message}` : outcome.value;
+  };
+
+  /**
+   * Runs one round's agent; returns the accepted result, or the failure message. Every submission that passes the
+   * round check goes through Grounding Review before it is accepted, and the review's findings come back as errors.
+   */
   const runAgent = async <P extends RoundSubmission | FinalSubmission>(
     label: string,
     prompt: BuiltPrompt,
     final: boolean,
     prepare: string[],
-  ): Promise<RoundCheckResult | string> => {
+  ): Promise<ReviewedRound | string> => {
     savePrompt(runDir, label, prompt);
     const toolName = final ? "submit_final" : "submit_round";
     const round = state.rounds.length + 1;
-    const outcome = await runTraced<P, RoundCheckResult>(
+    const leaveOpen = new Set<string>();
+    const reviews: ReviewRecord[] = [];
+    let reviewFailure: string | undefined;
+    let reviewCount = 0;
+    const outcome = await runTraced<P, ReviewedRound>(
       await getBackend(),
       {
         label,
@@ -205,25 +258,32 @@ export async function runClarify(opts: ClarifyOptions): Promise<ClarifyReport> {
             ? "Submit the Decisions drawn from the pending Answers. Call exactly once; call again with the complete corrected result if errors are returned."
             : "Submit this round's Decisions, follow-up questions and prepared questions. Call exactly once; call again with the complete corrected result if errors are returned.",
           parameters: final ? FinalSubmissionSchema : RoundSubmissionSchema,
-          check: (params, { isLast }) => {
-            const result = checkRound(state, params, { brief, round, prepare, final, isLast, language: state.outputLanguage, limits });
+          check: async (params, { attempt, isLast }) => {
+            const result = checkRound(state, params, { brief, round, prepare, final, isLast, language: state.outputLanguage, limits, leaveOpen });
             const count = result.issues.reduce((n, i) => n + i.errors.length, 0);
             if (count && !isLast) return { retry: validationFeedback(lib, toolName, formatRoundIssues(result.issues), count) };
-            return { accept: result };
+
+            const items = underReview(state, result.accepted.decisions);
+            if (!items.length) return { accept: { ...result, reviews } };
+            const review = await runReview(`${label}-review${++reviewCount}`, items);
+            if (typeof review === "string") {
+              reviewFailure = review;
+              return { accept: { ...result, reviews } };
+            }
+            const judged = judgeReview(state, items, review, { attempt, final, maxFollowUpDepth: limits.maxFollowUpDepth, followUps: result.accepted.followUps });
+            reviews.push(...judged.records);
+            for (const id of judged.leaveOpen) leaveOpen.add(id);
+            const found = judged.issues.reduce((n, i) => n + i.errors.length, 0);
+            if (found && !isLast) return { retry: validationFeedback(lib, toolName, formatRoundIssues(judged.issues), found) };
+            return { accept: { ...withoutFlagged(state, result, judged, { round, final, leaveOpen }), reviews } };
           },
         },
       },
       traceDir,
     );
-    const input = outcome.metrics.tokens.input;
-    agents.push({
-      label,
-      status: outcome.status,
-      ...(outcome.status === "failed" ? { reason: outcome.reason } : {}),
-      metrics: outcome.metrics,
-      cacheReadRatio: input ? Number((outcome.metrics.tokens.cacheRead / input).toFixed(3)) : 0,
-    });
+    recordAgent(label, outcome);
     if (outcome.status === "failed") return `${label} failed (${outcome.reason}): ${outcome.message}`;
+    if (reviewFailure) return reviewFailure;
     const result = outcome.value;
     state.rejected.push(...result.rejected);
     if (result.rejected.length) warnings.push(`${label}: ${result.rejected.length} item(s) rejected after the last attempt; see 02-rejected.json`);
@@ -259,7 +319,7 @@ export async function runClarify(opts: ClarifyOptions): Promise<ClarifyReport> {
           log(`[clarify-final] interpreting the last Answers`);
           const result = await runAgent<FinalSubmission>("clarify-final", buildFinalPrompt(lib, brief, state), true, []);
           if (typeof result === "string") return fail(result);
-          state = applyRound(state, { n: state.rounds.length + 1, final: true, prepare: [], accepted: result.accepted, ordering: "" });
+          state = applyRound(state, { n: state.rounds.length + 1, final: true, prepare: [], accepted: result.accepted, ordering: "", reviews: result.reviews });
         }
         state = close(state, termination);
         break;
@@ -283,7 +343,7 @@ export async function runClarify(opts: ClarifyOptions): Promise<ClarifyReport> {
       log(`[${label}] interpreting ${state.agenda.filter((i) => i.status === "answered").length} Answer(s), preparing ${selection.ids.length} question(s)`);
       const result = await runAgent<RoundSubmission>(label, buildRoundPrompt(lib, brief, state, selection.ids, { maxGaps: limits.maxGapsPerRound }), false, selection.ids);
       if (typeof result === "string") return fail(result);
-      state = applyRound(state, { n, final: false, prepare: selection.ids, accepted: result.accepted, ordering: selection.rationale });
+      state = applyRound(state, { n, final: false, prepare: selection.ids, accepted: result.accepted, ordering: selection.rationale, reviews: result.reviews });
 
       const candidates = {
         followUps: result.accepted.followUps.filter((f) => f.origin === "follow-up").map((f) => f.id),

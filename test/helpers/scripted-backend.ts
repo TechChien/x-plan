@@ -1,8 +1,18 @@
 import { Value } from "typebox/value";
 import type { AgentBackend, AgentSession, SessionOptions } from "../../src/agent/types.ts";
 
-/** One assistant turn: plain text (the agent stops) or a call of the session's tool. */
-export type ScriptedTurn = { text: string } | { call: unknown };
+/**
+ * One assistant turn: plain text (the agent stops), a call of the session's tool, or a call computed from the
+ * message the session was prompted with (for agents whose input the test does not know in advance).
+ */
+export type ScriptedTurn = { text: string } | { call: unknown } | { respond: (prompt: string) => unknown };
+
+/** A Grounding Review that finds every Decision in its prompt grounded. */
+export const approvingReview: ScriptedTurn = {
+  respond: (prompt) => ({
+    reviews: [...prompt.matchAll(/id: (decisions\[\d+\])/g)].map((m) => ({ decision: m[1], claims: [{ text: "as said", source: "answer" }], addressesQuestion: true, unanswered: [] })),
+  }),
+};
 
 /**
  * Stands in for PI: replays scripted assistant turns, validates tool arguments against the tool schema before
@@ -26,8 +36,9 @@ export class ScriptedBackend implements AgentBackend {
       prompt: async (text) => {
         record.prompts.push(text);
         while (!aborted) {
-          const turn = turns.shift();
-          if (!turn) return;
+          const next = turns.shift();
+          if (!next) return;
+          const turn = "respond" in next ? { call: next.respond(record.prompts[0] ?? text) } : next;
           if ("text" in turn) {
             options.onEvent({ type: "assistant", thinking: "thinking…", text: turn.text, toolCalls: [], usage, stopReason: "stop", durationMs: 1 });
             return;
@@ -46,7 +57,7 @@ export class ScriptedBackend implements AgentBackend {
             options.onEvent({ type: "tool_result", name: options.tool.name, isError: true, text: "Validation failed for tool arguments" });
             continue;
           }
-          const reply = options.tool.execute(turn.call);
+          const reply = await options.tool.execute(turn.call);
           options.onEvent({ type: "tool_result", name: options.tool.name, isError: reply.isError, text: reply.text });
           if (reply.terminate) return;
         }

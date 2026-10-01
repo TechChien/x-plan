@@ -75,7 +75,7 @@ export class PiBackend implements AgentBackend {
       executionMode: "sequential",
       constrainedSampling: { type: "json_schema", strict: "prefer" },
       async execute(_id, params) {
-        const reply = options.tool.execute(params);
+        const reply = await options.tool.execute(params);
         if (reply.isError) throw new Error(reply.text);
         return { content: [{ type: "text", text: reply.text }], details: undefined, terminate: reply.terminate };
       },

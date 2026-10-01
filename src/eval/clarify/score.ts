@@ -26,6 +26,8 @@ export interface ClarifyScore {
   recommendations: { good: string[]; bad: string[] };
   /** Submissions refused for deciding without an Answer (rules 2 and 3). */
   selfAnswerBlocked: number;
+  /** Decisions Grounding Review sent back, by verdict, over every attempt (one Decision can count under several). */
+  review: { embellished: number; partial: number; offTopic: number };
   rounds: number;
   questionsAsked: number;
   termination?: string;
@@ -100,8 +102,15 @@ export function scoreClarify(labels: ClarifyCase, brief: RequirementBrief, state
     noise: log.filter((e) => e.role === "unmatched").map((e) => ({ id: e.questionId, question: e.question })),
     recommendations,
     selfAnswerBlocked,
+    review: countReviews(state),
     rounds: state.rounds.filter((r) => !r.final).length,
     questionsAsked: log.length,
     ...(state.termination ? { termination: state.termination } : {}),
   };
+}
+
+function countReviews(state: ClarifyState): ClarifyScore["review"] {
+  const records = state.rounds.flatMap((r) => r.reviews ?? []);
+  const count = (v: string) => records.filter((r) => r.verdicts.some((x) => x === v)).length;
+  return { embellished: count("embellished"), partial: count("partial"), offTopic: count("off-topic") };
 }

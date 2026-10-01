@@ -1,6 +1,6 @@
 import type { RequirementBrief } from "../extract/schema.ts";
 import { close, createState, item, recordAnswers, settle, type UserInput } from "./agenda.ts";
-import type { AcceptedRound, AgendaItem, Answer, ClarifyState, Prepared, QuestionView } from "./schema.ts";
+import type { AcceptedRound, AgendaItem, Answer, ClarifyState, Prepared, QuestionView, ReviewRecord } from "./schema.ts";
 
 export interface RoundInput {
   n: number;
@@ -11,6 +11,8 @@ export interface RoundInput {
   accepted: AcceptedRound;
   /** The orderer's rationale for `prepare`. */
   ordering: string;
+  /** Grounding Review's findings for this round. */
+  reviews?: ReviewRecord[];
 }
 
 /** Applies one round's accepted submission. Pure: returns a new state. */
@@ -57,6 +59,7 @@ export function applyRound(current: ClarifyState, input: RoundInput): ClarifySta
   }
 
   for (const p of input.accepted.prepared) item(state, p.id).view = viewOf(p);
+  for (const id of input.accepted.leftOpen ?? []) item(state, id).status = "unresolved";
 
   state.rounds.push({
     n: input.n,
@@ -65,6 +68,7 @@ export function applyRound(current: ClarifyState, input: RoundInput): ClarifySta
     accepted: structuredClone({ ...input.accepted, decisions }),
     asked: [],
     ordering: { prepare: input.ordering, batch: "" },
+    ...(input.reviews ? { reviews: structuredClone(input.reviews) } : {}),
   });
   return settle(state);
 }
@@ -94,7 +98,14 @@ export function replay(brief: RequirementBrief, recorded: ClarifyState): Clarify
   let state = createState(brief, recorded.briefSha256, recorded.outputLanguage);
   if (recorded.source) state.source = structuredClone(recorded.source);
   for (const round of recorded.rounds) {
-    state = applyRound(state, { n: round.n, final: round.final, prepare: round.prepare, accepted: round.accepted, ordering: round.ordering.prepare });
+    state = applyRound(state, {
+      n: round.n,
+      final: round.final,
+      prepare: round.prepare,
+      accepted: round.accepted,
+      ordering: round.ordering.prepare,
+      ...(round.reviews ? { reviews: round.reviews } : {}),
+    });
     if (round.final) continue;
     state = markAsked(state, round.asked.map((q) => q.id), round.ordering.batch);
     for (const answer of recorded.answers.filter((a) => a.round === round.n)) {

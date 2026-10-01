@@ -1,5 +1,7 @@
 # Decision 只能以使用者的 Answer 為依據，Agenda 由程式維護
 
+> 2026-10-01：Decision 的內容是否真的來自它的 Answer，另由 Grounding Review 檢查；答非所問而且無法再追問的題目轉為 unresolved，不再被規則 1 硬逼出 Decision。見 [ADR 0011](0011-grounding-review-before-decisions-are-written.md)。
+
 Clarify 的 agent 只能**解讀** Answer，不能**產生**答案。每一條 Decision 都必須用 `answerRef` 指向一則真實存在、而且有作答內容的 Answer，也只能結案已經有 Answer 的 Agenda Item。Agenda Item 的狀態由程式維護，agent 只提交操作。各狀態轉移分別由誰觸發如下：
 
 - **只有使用者**能讓題目進入 deferred（延後）或 dismissed（不適用）。

@@ -11,9 +11,10 @@ export interface SubmitTool<P, R> {
   parameters: TSchema;
   /**
    * `attempt` counts submit calls so far including this one (1-based). When `isLast` is true no retry is
-   * left, so `check` should accept whatever part of the submission is usable.
+   * left, so `check` should accept whatever part of the submission is usable. It may be async, e.g. when the
+   * check itself asks another agent.
    */
-  check(params: P, ctx: { attempt: number; isLast: boolean }): CheckVerdict<R>;
+  check(params: P, ctx: { attempt: number; isLast: boolean }): CheckVerdict<R> | Promise<CheckVerdict<R>>;
 }
 
 export interface SubmitTask<P, R> {
@@ -114,10 +115,10 @@ export async function runSubmitTask<P, R>(backend: AgentBackend, task: SubmitTas
         name: task.tool.name,
         description: task.tool.description,
         parameters: task.tool.parameters,
-        execute: (params) => {
+        execute: async (params) => {
           executedThisAttempt = true;
           if (accepted) return { text: "Already accepted. Stop now.", terminate: true, isError: false };
-          const verdict = task.tool.check(params as P, {
+          const verdict = await task.tool.check(params as P, {
             attempt: metrics.submitAttempts,
             isLast: metrics.submitAttempts >= task.maxSubmitAttempts,
           });

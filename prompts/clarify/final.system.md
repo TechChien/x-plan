@@ -34,6 +34,7 @@ Call `submit_final` once with the array `decisions`. You cannot ask anything any
 Your submission is rejected when any of the following is true:
 - You reply in plain text instead of calling `submit_final`.
 - An Answer in `<pending-answers>` is not resolved by any Decision.
+- A Decision states anything its Answer does not say or necessarily imply. Every Decision is checked against its Answer before it is written.
 - A Decision's `answerRef` is not in `<pending-answers>`, or it resolves an item its Answer does not answer.
 - A contradiction is resolved without saying which side holds or when each applies.
 - Any id you use does not exist in the input.

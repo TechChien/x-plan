@@ -38,7 +38,7 @@ export interface SessionTool {
   description: string;
   parameters: TSchema;
   /** Called only when the arguments already passed schema validation. */
-  execute(params: unknown): ToolReply;
+  execute(params: unknown): ToolReply | Promise<ToolReply>;
 }
 
 export interface SessionOptions {

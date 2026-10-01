@@ -10,7 +10,7 @@ import { LabelAnswerer } from "../src/eval/clarify/answerer.ts";
 import { loadClarifyCase } from "../src/eval/clarify/cases.ts";
 import { renderClarifyReport, runClarifyEval } from "../src/eval/clarify/run.ts";
 import type { RequirementBrief } from "../src/extract/schema.ts";
-import { ScriptedBackend, type ScriptedTurn } from "./helpers/scripted-backend.ts";
+import { approvingReview, ScriptedBackend, type ScriptedTurn } from "./helpers/scripted-backend.ts";
 
 const CASE_DIR = join(import.meta.dirname, "..", "eval", "cases", "returns");
 const labels = loadClarifyCase(join(CASE_DIR, "clarify", "answers.yaml"));
@@ -74,7 +74,7 @@ function scripts(cancelSupersedes = "BR-1"): ScriptedTurn[][] {
 
 function backend(turns: ScriptedTurn[][]): AgentBackend {
   let next = 0;
-  return new ScriptedBackend((_: SessionOptions) => turns[next++] ?? []);
+  return new ScriptedBackend((o: SessionOptions) => (o.tool.name === "submit_review" ? [approvingReview] : (turns[next++] ?? [])));
 }
 
 const config = parseConfig({ provider: { baseUrl: "http://unused" } });
@@ -165,6 +165,7 @@ describe("runClarifyEval", () => {
       noise: [],
       recommendations: { good: ["return-fee"], bad: [] },
       selfAnswerBlocked: 0,
+      review: { embellished: 0, partial: 0, offTopic: 0 },
       rounds: 3,
       questionsAsked: 8,
       termination: "converged",

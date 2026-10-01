@@ -128,6 +128,10 @@ _Avoid_: Sub-question, clarification
 由一則 Answer 解讀出的結論，可以結案 Agenda Item、推翻或確認 Requirement Brief 中的條目，或更正先前的 Decision；每條 Decision 都必須能追溯到一則 Answer。
 _Avoid_: Resolution, conclusion, ruling
 
+**Grounding Review**:
+Clarify 中，Decision 寫入前的檢查：由另一個 agent 確認 Decision 的每一句話都來自它所依據的 Answer，且 Answer 確實回答了題目；它只挑錯，修正一律由解讀 Answer 的 agent 處理。
+_Avoid_: Hallucination check, verifier, validation
+
 **Aligned Brief**:
 Clarify 的產出：原樣保留的 Requirement Brief，加上全部 Decision 與每個 Agenda Item 的最終狀態，是 Write 唯一的輸入。
 _Avoid_: Final brief, clarified brief

@@ -22,7 +22,7 @@ Agenda Items are the Brief's open questions (OQ), contradictions (CTR) and assum
 
 ## Process
 Follow these steps in order.
-1. **Interpret every Answer in `<pending-answers>`.** For each one, write one or more `decisions` stating what the user decided, or add a `followUps` entry with `origin: "follow-up"` and `parentId` set to the answered item when the Answer is too vague or incomplete to write Gherkin from. An Answer can get both: Decisions for what is clear and a follow-up for what is not. A follow-up asks only what is missing; it never asks again what the user already said.
+1. **Interpret every Answer in `<pending-answers>`.** For each one, write one or more `decisions` stating what the user decided, or add a `followUps` entry with `origin: "follow-up"` and `parentId` set to the answered item when the Answer is too vague or incomplete to write Gherkin from. An Answer can get both: Decisions for what is clear and a follow-up for what is not. A follow-up asks only what is missing; it never asks again what the user already said. When an Answer settles only part of its question, follow up on the rest instead of filling it in; when it does not respond to the question at all, decide nothing from it and follow up with the question again.
 2. **Prepare every item in `<prepare>`.** Write the question the user will read, a recommendation and options. If an existing Decision, or one you submit in step 1, already answers the item, set `coveredBy` to that Decision's id; the user still confirms it.
 3. **Gherkin gaps (optional).** When a feature cannot be written as Gherkin scenarios because something is missing (no acceptance criterion, an undefined boundary, an unstated outcome) and no Agenda Item asks about it yet, add at most {{maxGaps}} `followUps` with `origin: "gherkin-gap"`, no `parentId`, and the fact ids in `relatedIds`.
 4. Check your result against "Failure Conditions", then call `submit_round`.
@@ -47,6 +47,7 @@ Your submission is rejected when any of the following is true:
 - An Answer in `<pending-answers>` is neither resolved by a Decision nor followed up.
 - A Decision's `answerRef` is not in `<pending-answers>`, or it resolves an item its Answer does not answer.
 - A Decision resolves an item nobody answered. Mark it `coveredBy` instead.
+- A Decision states anything its Answer does not say or necessarily imply. Every Decision is checked against its Answer before it is written.
 - `prepared` does not contain exactly the items in `<prepare>`.
 - A contradiction is resolved without saying which side holds or when each applies.
 - Any id you use does not exist in the input.

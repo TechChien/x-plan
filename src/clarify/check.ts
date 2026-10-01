@@ -27,6 +27,8 @@ export interface RoundCheckContext {
   isLast: boolean;
   language: OutputLanguage;
   limits: { batchSize: number; maxGapsPerRound: number; maxFollowUpDepth: number };
+  /** Answered items Grounding Review found nothing to decide on and that cannot be asked again: they may stay undecided. */
+  leaveOpen?: ReadonlySet<string>;
 }
 
 export interface RoundIssue {
@@ -146,13 +148,14 @@ export function checkRound(state: ClarifyState, submission: RoundSubmission | Fi
     report("round", missing.map((id) => `prepared is missing ${id}`));
   }
 
-  // Rule 1: every Answer being interpreted is resolved or followed up.
+  // Rule 1: every Answer being interpreted is resolved or followed up, unless Grounding Review left it open.
   const resolved = new Set(acceptedDecisions.flatMap((d) => d.resolves));
   const followedUp = new Set(followUps.flatMap((f) => (f.parentId ? [f.parentId] : [])));
+  const leftOpen = interpreting.filter((id) => ctx.leaveOpen?.has(id) && !resolved.has(id) && !followedUp.has(id));
   report(
     "round",
     interpreting
-      .filter((id) => !resolved.has(id) && !followedUp.has(id))
+      .filter((id) => !resolved.has(id) && !followedUp.has(id) && !leftOpen.includes(id))
       .map((id) => `${contentAnswer(state, id)?.ref ?? id} (the Answer to ${id}) is neither resolved by a Decision nor followed up`),
   );
 
@@ -168,7 +171,7 @@ export function checkRound(state: ClarifyState, submission: RoundSubmission | Fi
     );
   }
 
-  return { issues, accepted: { decisions: acceptedDecisions, followUps, prepared }, rejected, languageWarnings };
+  return { issues, accepted: { decisions: acceptedDecisions, followUps, prepared, ...(leftOpen.length ? { leftOpen } : {}) }, rejected, languageWarnings };
 }
 
 export function formatRoundIssues(issues: RoundIssue[]): string {

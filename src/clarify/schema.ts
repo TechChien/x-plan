@@ -127,6 +127,31 @@ export interface AcceptedRound {
   decisions: Decision[];
   followUps: AcceptedFollowUp[];
   prepared: Prepared[];
+  /**
+   * Answered items Grounding Review found no Decision could be drawn from and that cannot be asked again: they
+   * become unresolved (ADR 0011). Absent in rounds recorded before Grounding Review.
+   */
+  leftOpen?: string[];
+}
+
+/** Why Grounding Review stopped a Decision. */
+export type ReviewVerdict = "embellished" | "partial" | "off-topic";
+
+/** Grounding Review's finding on one submitted Decision, kept for the record and the eval. */
+export interface ReviewRecord {
+  /** The interpreter's submit attempt the Decision came from. */
+  attempt: number;
+  /** `decisions[i]` in that submission. */
+  path: string;
+  answerRef: string;
+  resolves: string[];
+  conclusion: string;
+  /** Empty: the Decision is grounded. */
+  verdicts: ReviewVerdict[];
+  /** Claims with no source. */
+  unsupported: string[];
+  /** Parts of the questions no Answer settles. */
+  unanswered: string[];
 }
 
 export interface RoundRecord {
@@ -138,6 +163,8 @@ export interface RoundRecord {
   /** The questions shown to the user, as shown: later rounds never rewrite them. */
   asked: (QuestionView & { id: string })[];
   ordering: { prepare: string; batch: string };
+  /** Grounding Review of every Decision submitted in this round, every attempt. Absent before Grounding Review. */
+  reviews?: ReviewRecord[];
 }
 
 export interface ClarifyRejected {

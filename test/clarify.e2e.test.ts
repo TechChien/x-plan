@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { parse as parseYaml } from "yaml";
 import { describe, expect, test } from "vitest";
 import type { AgentBackend, SessionOptions } from "../src/agent/types.ts";
 import { item } from "../src/clarify/agenda.ts";
@@ -11,7 +12,7 @@ import type { ClarifyState, DecisionOp, Prepared, RoundSubmission } from "../src
 import { runClarify, type ClarifyOptions } from "../src/clarify/stage.ts";
 import { parseConfig } from "../src/config.ts";
 import { returnsBrief } from "./helpers/brief.ts";
-import { ScriptedBackend, type ScriptedTurn } from "./helpers/scripted-backend.ts";
+import { approvingReview, ScriptedBackend, type ScriptedTurn } from "./helpers/scripted-backend.ts";
 
 const config = parseConfig({ provider: { baseUrl: "http://unused" } });
 
@@ -45,11 +46,15 @@ const op = (answerRef: string, resolves: string[], conclusion: string, extra: Pa
 const prep = (id: string): Prepared => ({ id, question: `請確認 ${id}`, recommendation: `建議 ${id}`, basis: "convention", options: ["是", "否"] });
 const round = (decisions: DecisionOp[], prepared: string[], extra: Partial<RoundSubmission> = {}): ScriptedTurn => ({ call: { decisions, followUps: [], prepared: prepared.map(prep), ...extra } });
 
-/** Plays one script per session, in order, and remembers which tool each session had. */
-function backend(scripts: ScriptedTurn[][]): ScriptedBackend & { tools: string[] } {
+/**
+ * Plays one script per interpreter session, in order, and remembers which tool each had. Grounding Review sessions
+ * play `review` (by default: everything is grounded) and are not counted.
+ */
+function backend(scripts: ScriptedTurn[][], review: () => ScriptedTurn[] = () => [approvingReview]): ScriptedBackend & { tools: string[] } {
   const tools: string[] = [];
   let next = 0;
   const b = new ScriptedBackend((options: SessionOptions) => {
+    if (options.tool.name === "submit_review") return review();
     tools.push(options.tool.name);
     return scripts[next++] ?? [];
   }) as ScriptedBackend & { tools: string[] };
@@ -128,7 +133,8 @@ describe("runClarify", () => {
     expect(run.source).toEqual({ kind: "run", runDir: dir.extract, file: "01-brief.json", ...source });
     expect(aligned.source).toEqual(source);
     expect(existsSync(join(dir.extract, "02-state.json"))).toBe(false); // the Extract Run is only read
-    expect(run.agents.map((a) => a.label)).toEqual(["clarify-r1", "clarify-r2", "clarify-r3"]);
+    expect(run.agents.map((a) => a.label)).toEqual(["clarify-r1", "clarify-r2-review1", "clarify-r2", "clarify-r3-review1", "clarify-r3"]);
+    expect(existsSync(join(out, "prompts", "clarify-r2-review1.user.md"))).toBe(true);
 
     const state = readJson<ClarifyState>(join(out, "02-state.json"));
     expect(replay(returnsBrief(), state)).toEqual(state);
@@ -252,5 +258,128 @@ describe("runClarify", () => {
     expect(report.failures[0]).toMatch(/clarify-r1 failed \(no-submit\)/);
     const retried = await runClarify(options(dir, backend(happyScripts()), happyAnswers));
     expect(retried).toMatchObject({ status: "succeeded", termination: "converged" });
+  });
+});
+
+/** What a scripted Grounding Review finds in one conclusion; unset fields mean grounded. */
+interface Finding {
+  addressesQuestion?: boolean;
+  unsupported?: string[];
+  unanswered?: string[];
+}
+
+/** A Grounding Review that judges each Decision in its prompt by its conclusion. */
+const reviewer = (judge: (conclusion: string) => Finding): ScriptedTurn => ({
+  respond: (prompt) => {
+    const body = /<review>\n([\s\S]*)\n<\/review>/.exec(prompt)?.[1] ?? "";
+    const { decisions } = parseYaml(body) as { decisions: { id: string; conclusion: string }[] };
+    return {
+      reviews: decisions.map((d) => {
+        const f = judge(d.conclusion);
+        return {
+          decision: d.id,
+          claims: [{ text: d.conclusion, source: "answer" }, ...(f.unsupported ?? []).map((text) => ({ text, source: "none" }))],
+          addressesQuestion: f.addressesQuestion ?? true,
+          unanswered: f.unanswered ?? [],
+        };
+      }),
+    };
+  },
+});
+
+const followUp = (parentId: string, question: string) => ({ origin: "follow-up" as const, parentId, question, recommendation: "7 天", basis: "convention" as const, options: [], relatedIds: [] });
+const firstRound = round([], ["CTR-1", "OQ-1", "OQ-2", "OQ-3", "OQ-4"]);
+
+describe("Grounding Review", () => {
+  test("a Decision stating what the user did not say is sent back, and only the grounded one is written", async () => {
+    const dir = runDir();
+    const b = backend(
+      [[firstRound], [round([op("R1/OQ-2", ["OQ-2"], "賣家負擔運費，退款 3 天內入帳")], ["ASM-2", "ASM-1"]), round([op("R1/OQ-2", ["OQ-2"], "賣家負擔運費")], ["ASM-2", "ASM-1"])]],
+      () => [reviewer((c) => (c.includes("3 天") ? { unsupported: ["退款 3 天內入帳"] } : {}))],
+    );
+    const report = await runClarify(options(dir, b, (q) => (q.id === "OQ-2" ? "賣家" : "/defer")));
+    expect(report).toMatchObject({ status: "succeeded", termination: "converged" });
+
+    const state = readJson<ClarifyState>(join(dir.clarify, "02-state.json"));
+    expect(state.decisions.map((d) => [d.id, d.conclusion])).toEqual([["DEC-1", "賣家負擔運費"]]);
+    expect(state.rounds[1]?.reviews?.map((r) => [r.attempt, r.verdicts, r.unsupported])).toEqual([
+      [1, ["embellished"], ["退款 3 天內入帳"]],
+      [2, [], []],
+    ]);
+    expect(state.rejected).toEqual([]);
+    expect(readFileSync(join(dir.clarify, "traces", "clarify-r2.md"), "utf8")).toContain('states what the user did not say: "退款 3 天內入帳"');
+    expect(replay(returnsBrief(), state)).toEqual(state);
+  });
+
+  test("an Answer that does not respond to its question is asked again, and left unresolved once it cannot be", async () => {
+    const dir = runDir();
+    const offTopic = op("R1/OQ-3", ["OQ-3"], "鑑賞期：送出後顯示申請編號");
+    const b = backend(
+      [
+        [firstRound],
+        [round([offTopic], ["ASM-2", "ASM-1"]), round([], ["ASM-2", "ASM-1"], { followUps: [followUp("OQ-3", "鑑賞期是幾天？")] })],
+        // /done before the follow-up is answered: the closing round can only decide or leave OQ-3 open.
+        [{ call: { decisions: [offTopic] } }, { call: { decisions: [] } }],
+      ],
+      () => [reviewer((c) => (c.includes("申請編號") ? { addressesQuestion: false } : {}))],
+    );
+    const report = await runClarify(options(dir, b, (q) => (q.id === "OQ-3" ? "送出後顯示申請編號" : q.id === "FQ-1" ? "/done" : "/defer")));
+    expect(report).toMatchObject({ status: "succeeded", termination: "done" });
+    expect(b.tools).toEqual(["submit_round", "submit_round", "submit_final"]);
+
+    const state = readJson<ClarifyState>(join(dir.clarify, "02-state.json"));
+    expect(state.decisions).toEqual([]);
+    expect(item(state, "FQ-1")).toMatchObject({ parentId: "OQ-3", origin: "follow-up" });
+    expect(item(state, "OQ-3").status).toBe("unresolved");
+    expect(state.rounds.at(-1)?.accepted.leftOpen).toEqual(["OQ-3"]);
+    expect(state.rounds.flatMap((r) => r.reviews ?? []).map((r) => r.verdicts)).toEqual([["off-topic"], ["off-topic"]]);
+    const trace = (label: string) => readFileSync(join(dir.clarify, "traces", `${label}.md`), "utf8");
+    expect(trace("clarify-r2")).toContain('remove this Decision and ask a follow-up (origin "follow-up", parentId OQ-3)');
+    expect(trace("clarify-final")).toContain("OQ-3 cannot be asked again and stays unresolved");
+    expect(replay(returnsBrief(), state)).toEqual(state);
+  });
+
+  test("an Answer that settles part of its question gets a follow-up for the rest; the Decision on the part may stay", async () => {
+    const dir = runDir();
+    const part = op("R1/OQ-1", ["OQ-1"], "已出貨的訂單不能取消");
+    const b = backend(
+      [[firstRound], [round([part], ["ASM-2", "ASM-1"]), round([part], ["ASM-2", "ASM-1"], { followUps: [followUp("OQ-1", "已出貨的訂單，會員要怎麼處理？")] })]],
+      () => [reviewer(() => ({ unanswered: ["會員之後怎麼處理"] }))],
+    );
+    const report = await runClarify(options(dir, b, (q) => (q.id === "OQ-1" ? "不能取消" : q.id === "FQ-1" ? "/done" : "/defer")));
+    expect(report.status).toBe("succeeded");
+    const state = readJson<ClarifyState>(join(dir.clarify, "02-state.json"));
+    expect(state.rounds[1]?.reviews?.map((r) => [r.attempt, r.verdicts, r.unanswered])).toEqual([
+      [1, ["partial"], ["會員之後怎麼處理"]],
+      [2, [], ["會員之後怎麼處理"]],
+    ]);
+    expect(item(state, "OQ-1")).toMatchObject({ status: "decided", children: ["FQ-1"] });
+  });
+
+  test("a Decision the review still flags on the last attempt is not written, and its Answer is interpreted again next round", async () => {
+    const dir = runDir();
+    const bad = op("R1/OQ-2", ["OQ-2"], "賣家負擔運費，退款 3 天內入帳");
+    const b = backend(
+      [[firstRound], [round([bad], ["ASM-2", "ASM-1"]), round([bad], ["ASM-2", "ASM-1"]), round([bad], ["ASM-2", "ASM-1"])], [round([op("R1/OQ-2", ["OQ-2"], "賣家負擔運費")], [])]],
+      () => [reviewer((c) => (c.includes("3 天") ? { unsupported: ["退款 3 天內入帳"] } : {}))],
+    );
+    const report = await runClarify(options(dir, b, (q) => (q.id === "OQ-2" ? "賣家" : "/defer")));
+    expect(report).toMatchObject({ status: "succeeded", termination: "converged" });
+    expect(report.warnings).toContainEqual(expect.stringMatching(/clarify-r2: 1 item\(s\) rejected/));
+    const state = readJson<ClarifyState>(join(dir.clarify, "02-state.json"));
+    expect(state.rejected).toEqual([{ round: 2, kind: "decision", item: { id: "DEC-1", ...bad }, errors: [expect.stringContaining("states what the user did not say")] }]);
+    expect(state.decisions.map((d) => [d.id, d.conclusion])).toEqual([["DEC-2", "賣家負擔運費"]]);
+    expect(replay(returnsBrief(), state)).toEqual(state);
+  });
+
+  test("a review that fails fails the round, so it can be retried", async () => {
+    const dir = runDir();
+    const b = backend([[firstRound], [round([op("R1/OQ-2", ["OQ-2"], "賣家負擔運費")], ["ASM-2", "ASM-1"])]], () => [{ text: "no review" }]);
+    const report = await runClarify(options(dir, b, (q) => (q.id === "OQ-2" ? "賣家" : "/defer")));
+    expect(report.status).toBe("failed");
+    expect(report.failures[0]).toMatch(/clarify-r2-review1 failed \(no-submit\)/);
+    const state = readJson<ClarifyState>(join(dir.clarify, "02-state.json"));
+    expect(state.decisions).toEqual([]);
+    expect(item(state, "OQ-2").status).toBe("answered");
   });
 });

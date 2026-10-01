@@ -10,6 +10,12 @@ export const ThinkingLevelSchema = Type.Union([Type.Literal("low"), Type.Literal
 export type ThinkingLevel = Static<typeof ThinkingLevelSchema>;
 
 const StageOverrideSchema = Type.Object({ thinking: Type.Optional(ThinkingLevelSchema) });
+/** Clarify's checking roles default to one level below the interpreter: their input is small and their job narrow. */
+const ClarifyOverrideSchema = Type.Object({
+  thinking: Type.Optional(ThinkingLevelSchema),
+  review: Type.Optional(StageOverrideSchema),
+  consistency: Type.Optional(StageOverrideSchema),
+});
 
 export const ConfigSchema = Type.Object({
   provider: Type.Object({
@@ -25,7 +31,7 @@ export const ConfigSchema = Type.Object({
   stages: Type.Optional(
     Type.Object({
       extract: Type.Optional(StageOverrideSchema),
-      clarify: Type.Optional(StageOverrideSchema),
+      clarify: Type.Optional(ClarifyOverrideSchema),
       write: Type.Optional(StageOverrideSchema),
     }),
   ),
@@ -65,6 +71,15 @@ export function parseConfig(raw: unknown, source = "config"): XPlanConfig {
 
 export function thinkingFor(config: XPlanConfig, stage: StageName): ThinkingLevel {
   return config.stages?.[stage]?.thinking ?? config.thinking ?? "medium";
+}
+
+export type ClarifyRole = "review" | "consistency";
+
+const LOWER: Record<ThinkingLevel, ThinkingLevel> = { xhigh: "high", high: "medium", medium: "low", low: "low" };
+
+/** A Clarify checking role: its own setting, else one level below the Clarify interpreter. */
+export function thinkingForRole(config: XPlanConfig, role: ClarifyRole): ThinkingLevel {
+  return config.stages?.clarify?.[role]?.thinking ?? LOWER[thinkingFor(config, "clarify")];
 }
 
 export function readApiKey(config: XPlanConfig): string {

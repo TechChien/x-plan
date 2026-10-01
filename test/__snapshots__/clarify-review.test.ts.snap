@@ -1,0 +1,61 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`reviewToYaml > gives each Decision its Answer as shown to the user, the Answers it follows up, the Brief items named and earlier Decisions 1`] = `
+"decisions:
+  - id: decisions[0]
+    answerRef: R2/FQ-1
+    resolves:
+      - FQ-1
+      - OQ-3
+    conclusion: 鑑賞期自到貨日起算 7 天
+  - id: decisions[1]
+    answerRef: R2/OQ-1
+    resolves:
+      - OQ-1
+    conclusion: 已出貨的訂單不能取消
+answers:
+  - ref: R2/FQ-1
+    item: FQ-1
+    followsUp: OQ-3
+    question: 從哪天起算？
+    recommendation: 到貨日
+    options:
+      - 下單日
+      - 到貨日
+    kind: text
+    answer: 到貨日
+  - ref: R1/OQ-3
+    item: OQ-3
+    question: OQ-3？
+    recommendation: 建議 OQ-3
+    kind: text
+    answer: 鑑賞期就是 7 天那個
+  - ref: R2/OQ-1
+    item: OQ-1
+    question: OQ-1？
+    recommendation: 建議 OQ-1
+    kind: text
+    answer: 出貨後不可取消
+brief:
+  - id: FEAT-1
+    name: 取消訂單
+    description: 取消訂單
+    actorIds: []
+    inputs: []
+    outputs: []
+    dependsOn: []
+    evidence:
+      - 會員可於下單後 3 天內取消訂單。
+  - id: FEAT-2
+    name: 申請退貨
+    description: 申請退貨
+    actorIds: []
+    inputs: []
+    outputs: []
+    dependsOn: []
+    evidence:
+      - 會員可以申請退貨。
+decided:
+  - id: DEC-1
+    conclusion: 一般會員 7 天"
+`;
