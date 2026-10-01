@@ -60,5 +60,7 @@ export interface AgentSession {
 
 /** Creates agent sessions. The PI SDK implements it in production; tests supply a scripted fake. */
 export interface AgentBackend {
+  /** The model sessions run on, for traces. */
+  readonly model?: string;
   createSession(options: SessionOptions): Promise<AgentSession>;
 }

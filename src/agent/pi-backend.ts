@@ -29,9 +29,13 @@ const DEFAULT_COMPAT = {
 export class PiBackend implements AgentBackend {
   private constructor(
     private readonly runtime: ModelRuntime,
-    private readonly model: Model<any>,
+    private readonly piModel: Model<any>,
     private readonly workDir: string,
   ) {}
+
+  get model(): string {
+    return this.piModel.id;
+  }
 
   static async create(config: XPlanConfig, workDir: string): Promise<PiBackend> {
     const runtime = await ModelRuntime.create({
@@ -84,7 +88,7 @@ export class PiBackend implements AgentBackend {
     const { session } = await createAgentSession({
       cwd: this.workDir,
       agentDir: this.workDir,
-      model: this.model,
+      model: this.piModel,
       thinkingLevel: options.thinking,
       modelRuntime: this.runtime,
       resourceLoader: fixedPromptLoader(options.systemPrompt),

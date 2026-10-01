@@ -47,6 +47,8 @@ export type TaskOutcome<R> =
 export interface TaskObserver {
   onEvent(event: AgentEvent): void;
   onRawEvent(event: unknown): void;
+  /** Wraps the `check` of a submit call, e.g. to run it inside the tool call's span. */
+  withinTool?<T>(fn: () => Promise<T>): Promise<T>;
 }
 
 /**
@@ -118,10 +120,12 @@ export async function runSubmitTask<P, R>(backend: AgentBackend, task: SubmitTas
         execute: async (params) => {
           executedThisAttempt = true;
           if (accepted) return { text: "Already accepted. Stop now.", terminate: true, isError: false };
-          const verdict = await task.tool.check(params as P, {
-            attempt: metrics.submitAttempts,
-            isLast: metrics.submitAttempts >= task.maxSubmitAttempts,
-          });
+          const check = async () =>
+            task.tool.check(params as P, {
+              attempt: metrics.submitAttempts,
+              isLast: metrics.submitAttempts >= task.maxSubmitAttempts,
+            });
+          const verdict = await (observer.withinTool ? observer.withinTool(check) : check());
           if ("accept" in verdict) {
             accepted = { value: verdict.accept };
             return { text: "Accepted.", terminate: true, isError: false };
