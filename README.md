@@ -2,7 +2,7 @@
 
 把需求文件轉換成 BDD（Gherkin）需求文件，讓 PM、R&D、QA 有共同的討論基礎。流程分三個 Stage：**Extract → Clarify → Write**。名詞定義見 [CONTEXT.md](CONTEXT.md)，架構決策見 [docs/adr/](docs/adr/)。
 
-目前已實作 **Stage 1：Extract** 與 **Stage 2：Clarify**。
+目前已實作 **Stage 1：Extract** 與 **Stage 2：Clarify**，另外可以用 OpenTelemetry 追蹤執行過程，並以 `x-plan feedback` 評價產出。
 
 ## 安裝與設定
 
@@ -72,7 +72,7 @@ Extract Run 的產出：
 | `01-brief.json` | Requirement Brief，也就是交給下一個 Stage 的正式契約 |
 | `01-brief.md` | 給人閱讀的 Brief，包含出處、被排除的條目、來源對照 |
 | `01-rejected.json` | 未通過驗證的 Rejected Item |
-| `run.json` | 輸入檔 hash、model、prompt hash、裝箱結果、各 agent 的指標、id 對照表 |
+| `run.json` | 輸入檔 hash、model、prompt hash、裝箱結果、各 agent 的指標、id 對照表、每個條目來自哪個 agent（`provenance`）、啟用 OTel 時的 trace 與 span id |
 | `sources/*.txt` | 轉檔後的文字；Evidence 的行號以這份文字為準 |
 | `prompts/*.md` | 實際送給模型的 system prompt 和 user message |
 | `traces/*.jsonl` / `*.md` | 每個 agent 的完整過程，包含 CoT、tool call、驗證錯誤與重試 |
@@ -118,6 +118,71 @@ Clarify Run 的產出：
 | `traces/clarify-r<n>.*`、`prompts/clarify-r<n>.*` | 每一 Round 的 agent 過程與實際送出的 prompt；`clarify-r<n>-review<k>.*` 是該 Round 第 k 次 Grounding Review，`clarify-r<n>-consistency.*` 是該 Round 的 Consistency Check |
 
 題目的排序目前採暫定規則（矛盾 → 依嚴重度排序的問題 → 假設），放在可替換的獨立 module，見 [ADR 0009](docs/adr/0009-question-ordering-is-a-separate-module.md)。
+
+## 可觀測性（OpenTelemetry）
+
+每個 Run 都會在 `traces/` 寫出完整的檔案 trace。另外也可以把過程以 OpenTelemetry span 送到 Langfuse 或任何 OTLP backend，在 UI 中瀏覽 Run → Round → agent → 每次模型回應與交卷的樹狀結構（[ADR 0013](docs/adr/0013-opentelemetry-supplements-file-traces.md)）。
+
+預設關閉。以下任一條件成立就啟用：
+
+- config 設定 `"telemetry": { "enabled": true }`
+- 環境中有標準的 `OTEL_EXPORTER_OTLP_ENDPOINT` 或 `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`（`OTEL_EXPORTER_OTLP_HEADERS` 等標準變數照常適用）
+
+`OTEL_SDK_DISABLED=true` 一律關閉，`"enabled": false` 優先於環境變數。送到 Langfuse 最簡單的設定：
+
+```json
+"telemetry": { "enabled": true },
+"langfuse":  { "baseUrl": "http://localhost:3000" }
+```
+
+```sh
+export LANGFUSE_PUBLIC_KEY=pk-lf-...   # 金鑰只從環境變數讀取；變數名稱可用 publicKeyEnv / secretKeyEnv 改
+export LANGFUSE_SECRET_KEY=sk-lf-...
+```
+
+沒有設定 OTLP endpoint 變數時，endpoint 與認證會從 `langfuse` 區塊推導出來。
+
+- **預設不送內容**：span 只帶 token、時間、狀態、id、重試次數。要連 prompt、CoT、tool 參數與 Clarify 的回答一起送，設定 `"captureContent": true`。需求文件若屬機密，請先確認 backend 的存取權限。
+- 每次執行程序是一條 trace，以 Run id 作為 session 串起來；續跑的 Clarify 與上游 Extract 以 span link 連接。
+- `clarify.await_user` 是等你回答的時間，標有 `xplan.await_user=true`，看延遲時可以排除。
+- Backend 連不上只會印一次警告，不影響 Run。程式結束或按 Ctrl+C 時會先 flush，最多等 5 秒。
+- `pnpm smoke` 在啟用時也會送出一條 trace，可用來確認設定。
+
+在本機啟動 Langfuse（需要 Docker）：
+
+```sh
+git clone https://github.com/langfuse/langfuse.git && cd langfuse
+docker compose up -d          # 啟動後打開 http://localhost:3000，建立專案並取得 API key
+```
+
+## Feedback：評價 Run 的產出
+
+`x-plan feedback` 記錄你對某個 Run 產出的評價。評價存在那個 Run 的目錄下的 `feedback.jsonl`；有設定 Langfuse 時，也會以 score 的形式同步過去，掛在產出該條目的 span 上（[ADR 0014](docs/adr/0014-feedback-is-local-first.md)）。
+
+```sh
+x-plan feedback <run> ACT-3 --wrong "物流商是外部系統，不是內部角色"
+x-plan feedback <run> ACT-3 --ok
+x-plan feedback <run> OQ-5 --redundant "prd.md 第 42 行有寫"
+x-plan feedback <run> --missing "VIP 免運" --at prd.md:57
+x-plan feedback <run> --score 4 --note "整體不錯，但漏了運費規則"
+x-plan feedback <run> --retract FB-3
+x-plan feedback <run> --list
+x-plan feedback <run> --sync
+```
+
+`<run>` 可以是 run id 或目錄。可以下的 verdict 依條目種類而定：
+
+| 條目 | verdict |
+|---|---|
+| 事實（ACT、FEAT、BR、AC、NFR、ENT、TERM、DEP、CON、OOS） | `--ok`、`--wrong`、`--partial` |
+| Open Question | `--ok`、`--redundant`（文件已有答案）、`--wrong`（問錯方向） |
+| Contradiction、Assumption | `--ok`、`--wrong` |
+
+`--ok` 以外的 verdict 都要附上說明。`--missing` 記錄應該擷取卻沒擷取的事實，`--at` 指出它在 Source Document 的位置；`--score` 是對整個 Run 的 1–5 分。Clarify Run 目前只支援 `--score` 與 `--missing`。
+
+- **只追加，不修改**。同一個人對同一條目再評價一次，會取代前一筆；`--retract` 撤回。不同人的評價並存。作者依序取自 `XPLAN_AUTHOR`、`git config user.name`、作業系統的使用者名稱。
+- 每筆評價都保存條目當下的原文，Brief 之後重跑也不影響。
+- 每次記錄後會自動同步到 Langfuse，失敗只印警告；`--sync` 補送尚未送出的評價，並刪除已被取代或撤回的。Run 當時沒有啟用 OTel 時，評價只留在本機，`--list` 標示為 `no trace`。
 
 ## 調整 prompt
 

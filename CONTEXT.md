@@ -139,3 +139,9 @@ _Avoid_: Conflict detector, validator, contradiction check
 **Aligned Brief**:
 Clarify 的產出：原樣保留的 Requirement Brief，加上全部 Decision 與每個 Agenda Item 的最終狀態，是 Write 唯一的輸入。
 _Avoid_: Final brief, clarified brief
+
+## 評價
+
+**Feedback**:
+人對某個 Run 產出的評價：對某個條目的 verdict、漏掉的事實，或對整個 Run 的分數。附帶條目當下的原文快照，一經記錄就不修改，改變看法時以新的一筆取代或撤回。它不是 Stage 也不是 Run，記錄在被評價的那個 Run 的目錄中。
+_Avoid_: Rating, review, annotation
