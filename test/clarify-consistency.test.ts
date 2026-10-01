@@ -78,11 +78,32 @@ describe("checkConflicts", () => {
     expect(result.accepted.map((c) => c.ids)).toEqual([["DEC-2", "BR-2"]]);
   });
 
-  test("a conflict already raised is not raised again; text in the wrong language is kept with a warning on the last attempt", () => {
+  test("Decisions drawn from the same Answer are one statement and never conflict among themselves", () => {
+    const state = applyRound(afterRoundOne(), {
+      n: 2,
+      final: false,
+      prepare: [],
+      accepted: accepted({
+        decisions: [
+          dec("DEC-1", "R1/CTR-1", ["CTR-1"], { conclusion: "取消期限為下單後 7 天", supersedes: ["BR-1"] }),
+          dec("DEC-2", "R1/CTR-1", ["CTR-1"], { conclusion: "VIP 會員可於下單後 14 天內取消" }),
+        ],
+      }),
+      ordering: "t",
+    });
+    const result = checkConflicts(returnsBrief(), state, { conflicts: [conflict(["DEC-1", "DEC-2"]), conflict(["DEC-2", "BR-2"])] }, ctx);
+    expect(result.issues).toEqual([
+      { path: "conflicts[0]", errors: ["all of DEC-1, DEC-2 come from the same Answer R1/CTR-1: they are one statement of the user, read together"] },
+    ]);
+    expect(result.accepted.map((c) => c.ids)).toEqual([["DEC-2", "BR-2"]]);
+  });
+
+  test("a conflict already raised is not raised again; text in the wrong language is kept with a warning, never retried", () => {
     const state = addConflicts(afterRoundTwo(), [conflict(["DEC-2", "BR-2"])], { final: false, maxDepth: 2 });
     const again = checkConflicts(returnsBrief(), state, { conflicts: [conflict(["BR-2", "DEC-2"])] }, ctx);
     expect(again.issues[0]?.errors).toEqual(["this conflict was already raised as FQ-1"]);
     const english = checkConflicts(returnsBrief(), afterRoundTwo(), { conflicts: [conflict(["DEC-1", "DEC-2"], { question: "Which one of these two decisions holds for cancelling orders now?" })] }, ctx);
+    expect(english.issues).toEqual([]);
     expect(english.accepted).toHaveLength(1);
     expect(english.languageWarnings).toEqual(["conflicts[0]"]);
   });

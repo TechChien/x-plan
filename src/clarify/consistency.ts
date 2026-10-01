@@ -98,15 +98,20 @@ export function checkConflicts(
         if (d.supersedes.includes(other)) errors.push(`${id} already supersedes ${other}: that is a correction, not a conflict`);
       }
     }
+    const decisionsHere = c.ids.map((id) => state.decisions.find((d) => d.id === id)).filter((d) => d !== undefined);
+    if (decisionsHere.length === c.ids.length && new Set(decisionsHere.map((d) => d.answerRef)).size === 1) {
+      errors.push(`all of ${c.ids.join(", ")} come from the same Answer ${decisionsHere[0]!.answerRef}: they are one statement of the user, read together`);
+    }
     const k = key(c.ids);
     const before = asked.find((a) => a.key === k);
     if (before) errors.push(`this conflict was already raised as ${before.id}`);
     else if (seen.has(k)) errors.push("the same conflict is listed twice");
     seen.add(k);
     if (i >= ctx.limit) errors.push(`at most ${ctx.limit} conflicts per round`);
+    // Language is only warned about: a stray character must not cost a retry, let alone fail the round.
     const language = languageErrors({ conflict: c.conflict, question: c.question, recommendation: c.recommendation, options: c.options }, ctx.language);
-    if (errors.length || language.length) result.issues.push({ path, errors: [...errors, ...language] });
-    if (!errors.length) {
+    if (errors.length) result.issues.push({ path, errors });
+    else {
       result.accepted.push(c);
       if (language.length) result.languageWarnings.push(path);
     }

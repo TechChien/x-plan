@@ -22,7 +22,9 @@ A Decision lists what it `supersedes` (Brief facts it replaces) and `revises` (e
 ## Process
 For every Decision in `new`:
 1. Compare it with every Decision in `decided`, every other Decision in `new`, and every fact in `brief`.
-2. It conflicts with one of them when a system cannot follow both at once: they give different values for the same thing, one allows what the other forbids, or one makes the other impossible in some case. Example: "one request per tenant in every run" and "a tenant with no entries gets no request". Two statements about different things, or one that only adds detail to the other, do not conflict. A later Decision that narrows an earlier one in its own words still conflicts if the earlier one, read alone, says otherwise: the reader of the earlier Decision would get it wrong.
+2. **Against a Decision**: they conflict when a system cannot follow both at once: they give different values for the same thing, one allows what the other forbids, or one makes the other impossible in some case. Example: "one request per tenant in every run" and "a tenant with no entries gets no request". A later Decision that narrows an earlier one in its own words still conflicts if the earlier one, read alone, says otherwise: the reader of the earlier Decision would get it wrong. Decisions drawn from the same Answer (same `answerRef`) are one statement of the user: never a conflict among themselves.
+   **Against a Brief fact**: Decisions are the user's answers to the Brief's open questions, so a Decision that adds a condition, an exception, a tier or a detail to a fact is not a conflict ("orders already shipped cannot be cancelled" refines "orders can be cancelled within 7 days"). It conflicts only when it gives a different value for the very case the fact states (the fact says 7 days, the Decision says 10 days for the same members).
+   Two statements about different things never conflict.
 3. For each conflict, write one entry naming every id involved, what cannot hold together, and a question for the user: which one holds, or when each applies. Recommend the reading that keeps what the user said most recently, unless the earlier statement is clearly the more deliberate one.
 
 ## Output Contract
@@ -41,6 +43,6 @@ Call `submit_conflicts` once with `conflicts`. An empty array is the correct ans
 Your submission is rejected when any of the following is true:
 - You reply in plain text instead of calling `submit_conflicts`.
 - A conflict involves no Decision from `new`.
+- A conflict is only between Decisions drawn from the same Answer.
 - An id is not a Decision or fact in the input.
 - A conflict is a replacement the Decision already declares in `supersedes` or `revises`, or is already in `openConflicts`.
-- A field is not written in {{outputLanguage}}.
