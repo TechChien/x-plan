@@ -101,7 +101,7 @@ Clarify 以多個 Round 進行。每一 Round，模型會先解讀你上一輪�
 | `/note [ID] 內容` | 主動補充或更正，例如 `/note DEC-2 VIP 是 10 天` |
 | `/done` | 結束提問；已回答的會先整理成 Decision，其餘標為未決 |
 
-模型不會替你回答：每一條 Decision 都必須對應到你的一則回答，模型也不能自行判定某題不適用或已有答案（[ADR 0007](docs/adr/0007-decisions-grounded-in-user-answers.md)）。Decision 寫入前還會經過 Grounding Review：由另一個 agent 檢查 Decision 有沒有寫進你沒說的內容、你的回答有沒有答完整、有沒有答非所問，有問題就退回重寫或改成追問你（[ADR 0011](docs/adr/0011-grounding-review-before-decisions-are-written.md)）。reviewer 的 thinking 預設比 Clarify 低一級，可用 config 的 `stages.clarify.review.thinking` 調整。每則回答輸入後就立即存檔。中斷後，以 Clarify Run 的 id 重跑就會從中斷的地方接續；上游的 Brief 如果在這之間被改寫過，會拒絕續跑，要改用 `--restart` 從頭開始。
+模型不會替你回答：每一條 Decision 都必須對應到你的一則回答，模型也不能自行判定某題不適用或已有答案（[ADR 0007](docs/adr/0007-decisions-grounded-in-user-answers.md)）。Decision 寫入前還會經過 Grounding Review：由另一個 agent 檢查 Decision 有沒有寫進你沒說的內容、你的回答有沒有答完整、有沒有答非所問，有問題就退回重寫或改成追問你（[ADR 0011](docs/adr/0011-grounding-review-before-decisions-are-written.md)）。reviewer 的 thinking 預設比 Clarify 低（Clarify 為 xhigh 或 high 時用 medium，medium 時用 low），可用 config 的 `stages.clarify.review.thinking` 調整。每則回答輸入後就立即存檔。中斷後，以 Clarify Run 的 id 重跑就會從中斷的地方接續；上游的 Brief 如果在這之間被改寫過，會拒絕續跑，要改用 `--restart` 從頭開始。
 
 參數：`--out <dir>`（新 Clarify Run 的目錄）、`--restart`、`--allow-failed-extract`、`--lang <en|zh|cn>`（預設沿用 Brief 的語言）、`--max-rounds <n>`（預設 8）、`--batch-size <n>`（預設 5）、`--config <path>`。
 

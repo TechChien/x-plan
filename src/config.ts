@@ -75,7 +75,8 @@ export function thinkingFor(config: XPlanConfig, stage: StageName): ThinkingLeve
 
 export type ClarifyRole = "review" | "consistency";
 
-const LOWER: Record<ThinkingLevel, ThinkingLevel> = { xhigh: "high", high: "medium", medium: "low", low: "low" };
+// xhigh drops to medium, not high: some served models accept only xhigh, medium and low.
+const LOWER: Record<ThinkingLevel, ThinkingLevel> = { xhigh: "medium", high: "medium", medium: "low", low: "low" };
 
 /** A Clarify checking role: its own setting, else one level below the Clarify interpreter. */
 export function thinkingForRole(config: XPlanConfig, role: ClarifyRole): ThinkingLevel {

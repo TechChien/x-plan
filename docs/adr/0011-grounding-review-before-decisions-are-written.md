@@ -31,7 +31,7 @@ ADR 0007 只保證每條 Decision 都指向一則有作答內容的 Answer，但
 
 ## Consequences
 
-- 每次交卷多一次 LLM 呼叫，但只送本輪的 Decision 和相關的 Answer，輸入遠小於 interpreter 的輸入。reviewer 的 thinking 預設比 interpreter 低一級，可以在 config 用 `stages.clarify.review.thinking` 調整。
+- 每次交卷多一次 LLM 呼叫，但只送本輪的 Decision 和相關的 Answer，輸入遠小於 interpreter 的輸入。reviewer 的 thinking 預設比 interpreter 低：xhigh 和 high 降為 medium（有些模型不接受 high），medium 降為 low；可以在 config 用 `stages.clarify.review.thinking` 調整。
 - 程式檢查沒通過時不會呼叫 reviewer，等 interpreter 修好格式再審。
 - 交卷時的檢查（`SubmitTool.check`）改為可以是非同步的。
 - reviewer 的界線在「必然推得」：寫得太寬會放過幻覺，寫得太嚴會退回合理的改寫。這條界線只能靠 prompt 裡的正反例描述，並用 eval 的「Review 攔下」指標觀察。
