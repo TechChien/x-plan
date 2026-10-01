@@ -10,6 +10,9 @@ import { OUTPUT_LANGUAGES, type OutputLanguage } from "./shared/language.ts";
 import { newRunId, readRunMeta, resolveRunDir, runsDir } from "./shared/runs.ts";
 import { runExtract } from "./extract/stage.ts";
 import { startTelemetry } from "./telemetry/setup.ts";
+import { feedbackAction, formatFeedback, recordFeedback, resolveAuthor, type FeedbackOptions } from "./feedback/feedback.ts";
+import { MAX_SCORE, MIN_SCORE } from "./feedback/schema.ts";
+import { readFeedback } from "./feedback/store.ts";
 
 const program = new Command();
 program.name("x-plan").description("Turn requirement documents into BDD (Gherkin) specs");
@@ -122,6 +125,40 @@ program
       if (report.status === "failed") process.exitCode = 1;
     },
   );
+
+program
+  .command("feedback")
+  .description("Record Feedback on a Run's output: a verdict on a Brief item, a missing fact, or an overall score")
+  .argument("<run>", "the Run the Feedback is about: an id under .x-plan/runs/ or a directory")
+  .argument("[item]", "a Brief item id, e.g. ACT-3 or OQ-5")
+  .option("--ok", "the item is right")
+  .option("--wrong <note>", "the item is wrong (for OQ: asks the wrong thing; CTR: not a real conflict; ASM: unreasonable)")
+  .option("--partial <note>", "the item is partly wrong (facts only)")
+  .option("--redundant <note>", "the open question is already answered by the documents (OQ only)")
+  .option("--note <text>", "a note for --ok, --score or --retract")
+  .option("--missing <fact>", "a fact the Run should have produced and did not")
+  .option("--at <file:line>", "with --missing: where the Source Document says it, e.g. prd.md:57")
+  .option("--score <n>", `overall score of the Run, ${MIN_SCORE}-${MAX_SCORE}`, Number)
+  .option("--retract <id>", "withdraw an earlier Feedback, e.g. FB-3")
+  .option("--list", "show the Feedback that stands")
+  .option("--sync", "send Feedback not yet sent to Langfuse, and remove what was superseded or retracted")
+  .option("--config <path>", "config file (default: ./x-plan.config.json, then ~/.x-plan/)")
+  .action(async (runArg: string, item: string | undefined, opts: FeedbackOptions & { config?: string }) => {
+    const cwd = process.cwd();
+    const runDir = resolveRunDir(cwd, runArg);
+    const log = (message: string) => console.error(`x-plan: ${message}`);
+    const what = feedbackAction(item, opts);
+    if (what.action === "list") {
+      const entries = readFeedback(runDir);
+      const lines = formatFeedback(entries, (id) => (entries.some((e) => e.id === id && "trace" in e && e.trace) ? "traced" : "no trace"));
+      console.log(lines.length ? lines.join("\n") : "No Feedback yet.");
+      return;
+    }
+    if (what.action === "sync") throw new Error("--sync needs a langfuse block in the config");
+    const recorded = recordFeedback(runDir, what.request, { author: resolveAuthor(), now: new Date() });
+    for (const w of recorded.warnings) log(`warning: ${w}`);
+    log(`Recorded ${recorded.entry.id}${recorded.replaces ? `, replacing ${recorded.replaces}` : ""}${recorded.entry.type === "retract" ? `, withdrawing ${recorded.entry.retracts}` : ""}`);
+  });
 
 /** Traces `fn` when telemetry is on (ADR 0013); spans are flushed before the command returns. */
 async function withTelemetry<T>(config: XPlanConfig, log: (message: string) => void, fn: () => Promise<T>): Promise<T> {
