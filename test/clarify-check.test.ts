@@ -172,6 +172,22 @@ describe("checkRound", () => {
       );
     });
 
+    test("an item is followed up once: when its follow-ups end without an Answer, its own Answer must be decided on", () => {
+      let state = applyRound(afterRoundOne(), {
+        n: 2,
+        final: false,
+        prepare: [],
+        accepted: accepted({ decisions: [dec("DEC-1", "R1/CTR-1", ["CTR-1"], { supersedes: ["BR-1"] }), dec("DEC-2", "R1/OQ-2", ["OQ-2"])], followUps: [{ id: "FQ-1", ...fu() }] }),
+        ordering: "t",
+      });
+      state = recordAnswers(ask(state, []), [{ type: "response", itemId: "FQ-1", kind: "na", text: "" }], meta);
+      expect(item(state, "OQ-3")).toMatchObject({ status: "answered", children: ["FQ-1"] });
+      const again = { decisions: [], followUps: [fu()], prepared: [] };
+      expect(errorsOf(state, again, c)).toContainEqual(
+        expect.stringMatching(/^followUps\[0\]: OQ-3 was already followed up \(FQ-1\) and the user gave no more; decide on its own Answer instead of asking again/),
+      );
+    });
+
     test("the closing round interprets followed-up items too and cannot ask anything", () => {
       const final = ctx({ round: 4, prepare: [], final: true });
       const onlyChild = { decisions: [op("R3/FQ-1", ["FQ-1"], "起算點未定")] };

@@ -252,6 +252,9 @@ function followUpErrors(state: ClarifyState, f: FollowUp, c: FollowUpContext): s
       const parent = findItem(state, f.parentId);
       if (parent && parent.depth + 1 > c.limits.maxFollowUpDepth) {
         errors.push(`${f.parentId} is already a follow-up of a follow-up; decide on the Answer you have instead of asking again`);
+      } else if (parent?.children.length) {
+        // Its follow-ups ended without content (that is why it is back in the pending Answers): asking again loops.
+        errors.push(`${f.parentId} was already followed up (${parent.children.join(", ")}) and the user gave no more; decide on its own Answer instead of asking again`);
       }
     }
   } else {

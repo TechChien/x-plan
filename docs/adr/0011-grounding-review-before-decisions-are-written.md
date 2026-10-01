@@ -27,6 +27,8 @@ ADR 0007 只保證每條 Decision 都指向一則有作答內容的 Answer，但
 - `partial` 不再要求追問，Decision 只保留使用者說過的部分。
 - `off-topic` 的題目由程式標成 `leftOpen`，題目轉為 unresolved，規則 1 對它豁免。這補上了 ADR 0007 規則 1 的缺口：答非所問的 Answer 不必、也不能被硬寫成 Decision。
 
+同一題只能被追問一次（程式檢查）。追問被 `/na`、`/defer` 結束後，原題回到待解讀狀態，這時 interpreter 只能根據使用者已經說過的內容做決定；如果那則 Answer 答非所問，review 會把它標成 `leftOpen`。沒有這條限制時，實測中模型對同一則答非所問的 Answer 連續追問了 4 輪。
+
 重交 3 次後仍被標記的 Decision 不會寫入，記到 `02-rejected.json`，它的 Answer 在下一 Round 重新解讀，與 ADR 0007 中被程式檢查拒絕的 Decision 處理方式相同。reviewer 本身失敗時，這個 Round 就失敗，進度已存檔，可以續跑；不會跳過檢查繼續執行。
 
 ## Consequences
