@@ -150,7 +150,7 @@ export function buildVocabularyPrompt(
   aligned: AlignedBrief,
   outline: WriteOutline,
   written: Map<string, WrittenFeature>,
-  opts: { existing?: VocabularyEntry[] } = {},
+  opts: { existing?: VocabularyEntry[]; featureIds?: Set<string> } = {},
 ): BuiltPrompt {
   const decisions = new Map(aligned.decisions.map((d) => [d.id, d]));
   const { brief } = aligned;
@@ -166,7 +166,7 @@ export function buildVocabularyPrompt(
       names: names.length ? yaml(names) : "[]",
       decisions: active.length ? yaml(active) : "[]",
       existing: optionalBlock("existing", opts.existing),
-      text: yaml(Object.fromEntries(vocabularyLocations(outline, written))),
+      text: yaml(Object.fromEntries(vocabularyLocations(outline, written, opts.featureIds))),
     }),
   };
 }

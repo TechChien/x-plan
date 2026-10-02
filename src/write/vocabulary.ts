@@ -95,9 +95,18 @@ function locations(outline: WriteOutline, written: Map<string, WrittenFeature>):
   return locs;
 }
 
-/** Every text the agent sees in `<text>`, keyed by the location label a replacement names. */
-export function vocabularyLocations(outline: WriteOutline, written: Map<string, WrittenFeature>): Map<string, string> {
-  return new Map([...locations(outline, written)].map(([loc, l]) => [loc, l.get()]));
+/**
+ * Every text the agent sees in `<text>`, keyed by the location label a replacement names; with `featureIds`, only
+ * the texts of those Features (a rewrite with `--only` normalizes just what it rewrote).
+ */
+export function vocabularyLocations(outline: WriteOutline, written: Map<string, WrittenFeature>, featureIds?: Set<string>): Map<string, string> {
+  return new Map([...locations(outline, written)].filter(([loc]) => !featureIds || featureIds.has(featureOf(outline, loc))).map(([loc, l]) => [loc, l.get()]));
+}
+
+/** The Feature a location belongs to: `FEAT-1/...` directly, `SCN-3/...` through the outline. */
+export function featureOf(outline: WriteOutline, loc: string): string {
+  const head = loc.split("/")[0]!;
+  return outline.scenarios.find((s) => s.id === head)?.featureId ?? head;
 }
 
 /** Kept exactly as written: placeholders and quoted values. */

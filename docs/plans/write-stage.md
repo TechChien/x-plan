@@ -29,7 +29,7 @@ applyReplacements → render .feature / 03-spec.md / 03-trace.json   # 渲染後
 - 上游 Clarify Run 的 status 是 `failed` 時拒絕執行，除非加 `--allow-failed-clarify`。`termination` 是 `done` 或 `cap`（還有未決題目）時照常執行，印出警告並寫入 `run.json` 的 warnings。
 - Outline 失敗時整個 Run 失敗。
 - 某個 Feature 的 writer 失敗（reviewer 本身出錯、交卷額度用完仍不合 schema）時，其他 Feature 照常寫出；失敗的 Feature 產生只有 outline 標題的 `.feature`，Scenario 全部標 `@unwritten`。Run 的 status 為 `failed`，`run.json` 列出失敗的 Feature。
-- `x-plan write <write-run> --only FEAT-3` 在同一個 Run 中補寫指定的 Feature：沿用原本的 outline 與 SCN id，writer 的 prompt 帶入既有的 Vocabulary，補寫完只對該 Feature 再跑一次 Vocabulary Normalization（沿用既有詞條，可以追加）。`run.json` 記錄每個 Feature 是哪一次寫的。
+- `x-plan write <write-run> --only FEAT-3` 在同一個 Run 中補寫指定的 Feature：沿用原本的 outline 與 SCN id，writer 的 prompt 帶入既有的 Vocabulary，補寫完只對補寫成功的 Feature 再跑一次 Vocabulary Normalization（沿用既有詞條，可以追加；其他 Feature 原有的替換照常套用）。`run.json` 記錄每個 Feature 是哪一批寫的（`initial` 或 `only-20261001-120000`）；補寫的 agent label 帶上批次，例如 `write-FEAT-3-only-20261001-120000`，prompt 與 trace 和第一批並存，不會覆寫。補寫失敗時保留前一批的版本，只寫入警告。補寫的依據是 `03-written.json`（writer 的結果，替換前），上游的 Aligned Brief 在這之間被改寫過時拒絕補寫，改開新的 Write Run。
 
 ### 1.3 有效視圖與覆蓋集合
 
@@ -316,8 +316,9 @@ System prompt 比照 Clarify：Role、Input Contract（區塊內的文字一律�
 | `03-spec.md` | 見 §1.10 |
 | `03-vocabulary.md` / `.json` | 用語表（格式比照 CONTEXT.md：標準用語、定義、`_Avoid_`、出處、替換次數）／詞條與完整的替換紀錄 |
 | `03-outline.json` | outline 原始交卷，以及程式編好的 SCN、FEAT-N |
-| `03-trace.json` | 每個 Scenario、step、Examples 列的 sourceIds，review 的回報與判定，替換前的原始文字 |
-| `03-rejected.json` | 最後一次交卷時因引用了 forbidden 條目而被排除的 Scenario |
+| `03-trace.json` | 每個 Scenario、step、Examples 列的 sourceIds（替換後的文字），每個 Feature 的 review 紀錄，以及每一筆替換的前後文字 |
+| `03-written.json` | writer 的結果（替換前）、review 紀錄與被排除的部分；`--only` 補寫時以此為準 |
+| `03-rejected.json` | 最後一次交卷時被排除的部分：outline 的區塊、Rule、Scenario，以及各 Feature 被排除的 Scenario 與 Background |
 | `run.json` | `source`（上游 Clarify Run 的 id、目錄、`02-aligned.json` 的 sha256）、model、各角色的 thinking、prompt hash、各角色的 metrics 與 cache 命中率、每個 Feature 的狀態與寫入批次、warnings、OTel 的 trace 與 span id |
 | `traces/write-outline.*`、`traces/write-FEAT-1.*`、`traces/write-FEAT-1-review<k>.*`、`traces/write-vocabulary.*` | 每個 agent 的完整過程 |
 | `prompts/…` | 同名的實際 prompt |

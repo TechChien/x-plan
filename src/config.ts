@@ -16,6 +16,13 @@ const ClarifyOverrideSchema = Type.Object({
   review: Type.Optional(StageOverrideSchema),
   consistency: Type.Optional(StageOverrideSchema),
 });
+/** Write's checking and normalizing roles default to one level below the outline and writers, as in Clarify. */
+const WriteOverrideSchema = Type.Object({
+  thinking: Type.Optional(ThinkingLevelSchema),
+  review: Type.Optional(StageOverrideSchema),
+  /** Vocabulary Normalization (ADR 0019), a trial: `enabled: false` leaves the writers' wording as written. */
+  vocabulary: Type.Optional(Type.Object({ enabled: Type.Optional(Type.Boolean()), thinking: Type.Optional(ThinkingLevelSchema) })),
+});
 
 export const ConfigSchema = Type.Object({
   provider: Type.Object({
@@ -32,7 +39,7 @@ export const ConfigSchema = Type.Object({
     Type.Object({
       extract: Type.Optional(StageOverrideSchema),
       clarify: Type.Optional(ClarifyOverrideSchema),
-      write: Type.Optional(StageOverrideSchema),
+      write: Type.Optional(WriteOverrideSchema),
     }),
   ),
   concurrency: Type.Optional(Type.Integer({ minimum: 1 })),
@@ -97,6 +104,13 @@ const LOWER: Record<ThinkingLevel, ThinkingLevel> = { xhigh: "medium", high: "me
 /** A Clarify checking role: its own setting, else one level below the Clarify interpreter. */
 export function thinkingForRole(config: XPlanConfig, role: ClarifyRole): ThinkingLevel {
   return config.stages?.clarify?.[role]?.thinking ?? LOWER[thinkingFor(config, "clarify")];
+}
+
+export type WriteRole = "review" | "vocabulary";
+
+/** A Write role other than the outline and writers: its own setting, else one level below them. */
+export function thinkingForWriteRole(config: XPlanConfig, role: WriteRole): ThinkingLevel {
+  return config.stages?.write?.[role]?.thinking ?? LOWER[thinkingFor(config, "write")];
 }
 
 export function readApiKey(config: XPlanConfig): string {
