@@ -2,7 +2,7 @@
 
 把需求文件轉換成 BDD（Gherkin）需求文件，讓 PM、R&D、QA 有共同的討論基礎。流程分三個 Stage：**Extract → Clarify → Write**。名詞定義見 [CONTEXT.md](CONTEXT.md)，架構決策見 [docs/adr/](docs/adr/)。
 
-目前已實作 **Stage 1：Extract** 與 **Stage 2：Clarify**，另外可以用 OpenTelemetry 追蹤執行過程，並以 `x-plan feedback` 評價產出。
+三個 Stage 都已實作，另外可以用 OpenTelemetry 追蹤執行過程，並以 `x-plan feedback` 評價產出。
 
 ## 安裝與設定
 
@@ -63,6 +63,7 @@ pnpm dev extract spec/ --reference "schema/**" "api-manual.md"
   extract-…-a1b2c3/     ← x-plan extract spec/
   clarify-…-d4e5f6/     ← x-plan clarify extract-…-a1b2c3
   clarify-…-0718ab/     ← x-plan clarify extract-…-a1b2c3（同一個 Extract，另一次 Clarify）
+  write-…-9c0d1e/       ← x-plan write clarify-…-d4e5f6
 ```
 
 Extract Run 的產出：
@@ -118,6 +119,58 @@ Clarify Run 的產出：
 | `traces/clarify-r<n>.*`、`prompts/clarify-r<n>.*` | 每一 Round 的 agent 過程與實際送出的 prompt；`clarify-r<n>-review<k>.*` 是該 Round 第 k 次 Grounding Review，`clarify-r<n>-consistency.*` 是該 Round 的 Consistency Check |
 
 題目的排序目前採暫定規則（矛盾 → 依嚴重度排序的問題 → 假設），放在可替換的獨立 module，見 [ADR 0009](docs/adr/0009-question-ordering-is-a-separate-module.md)。
+
+### Write：寫出 Gherkin 需求文件
+
+指定一個 Clarify Run，Write 會開一個新的 Write Run，讀取它的 `02-aligned.json`，寫出 Gherkin 需求文件。Write 不與使用者互動：寫的時候發現的缺口寫成 `@open` 的情境骨架，要補就回 Clarify。
+
+```sh
+pnpm dev write clarify-20260930-1600-d4e5f6                     # 從這個 Clarify Run 寫一個新的 Write Run
+pnpm dev write write-20261001-1100-9c0d1e --only FEAT-2 FEAT-3  # 在既有的 Write Run 中重寫指定的 Feature
+```
+
+上游必須是 `succeeded`，否則要加 `--allow-failed-clarify`。Clarify 以 `/done` 或達到 Round 上限結束時照常寫，還沒決定的題目會出現在文件裡，並印出警告。
+
+Write 分四步，每一步的產出都由程式檢查：
+
+1. **Outline**：一個 agent 看整份 Aligned Brief，決定每個 Feature 底下有哪些 Rule 與情境，每個情境只有標題、種類和它依據的條目（[ADR 0015](docs/adr/0015-write-outline-then-feature-writers.md)）。程式檢查**覆蓋**：每個 Feature、Business Rule、Acceptance Criterion 和 Decision 都要有情境承接；被推翻的條目、沒有確認的假設不能引用（[ADR 0016](docs/adr/0016-coverage-checked-by-code.md)）。
+2. **Writer**：每個 Feature 一個 agent，只寫 outline 指定的情境的 Given / When / Then。它只看得到本 Feature 的情境所依據的條目，每一行都要標出依據；非推導情境中的數字必須出自它引用的條目。
+3. **Scenario Review**：另一個 agent 逐行檢查有沒有多寫、和依據相反、數字沒有出處、推導過頭或引用錯條目，有問題就退回 writer 重寫（[ADR 0018](docs/adr/0018-scenario-review.md)）。
+4. **用語統一**：全部寫完後，一個 agent 整理出用語表，把同一概念的不同說法換成同一個詞，替換由程式逐字執行並記錄（[ADR 0019](docs/adr/0019-vocabulary-normalization.md)）。這一步是試行，config 的 `stages.write.vocabulary.enabled` 設為 `false` 就不跑。
+
+`.feature` 的關鍵字一律用英文（`Feature`、`Rule`、`Scenario`、`Given`…），內容用輸出語言。每個情境上的 tag 說明它的來歷：
+
+| Tag | 意思 |
+|---|---|
+| `@SCN-3` | 情境的 id，Feedback 用它指定情境 |
+| `@BR-2 @DEC-1 …` | 情境依據的條目；每一行的依據記在 `03-trace.json` |
+| `@derived` | 由規則**必然推得**、不是原文或使用者明說的情境或 Examples，例如由「7 天內可退」推出第 8 天不可退（[ADR 0017](docs/adr/0017-derived-scenarios-and-placeholders.md)） |
+| `@open` / `@deferred` | Clarify 中沒有答案或延後決定的題目；已知的步驟照寫，最後一行是 `Then <待決 OQ-3：…>` 或 `Then <延後 OQ-1：…>` |
+| `@unverified` | 重寫 3 次後 Review 仍有疑慮，照樣保留；原因列在 `03-spec.md` |
+| `@unwritten` | writer 沒寫出來，只有標題；用 `--only` 重寫 |
+| `@nfr` | 有可量測門檻的 Non-functional Requirement |
+
+規則沒給的值一律寫成 `<任一一般商品>` 這種佔位，不會編造。跑測試時可以用 `not @open and not @deferred and not @unwritten` 排除還沒定案的情境。
+
+某個 Feature 的 writer 失敗時，其他 Feature 照常寫出，Run 的狀態是 `failed`，最後會印出重寫的指令。`--only` 沿用原本的 outline 與情境 id，重寫的 prompt 帶入既有的用語表；重寫失敗時保留原本的版本。上游的 Aligned Brief 在這之間被改寫過時，拒絕重寫，要改開新的 Write Run。
+
+參數：`--out <dir>`（新 Write Run 的目錄）、`--only <FEAT-id...>`、`--allow-failed-clarify`、`--lang <en|zh|cn>`（預設沿用 Aligned Brief 的語言）、`--config <path>`。
+
+Review 與用語統一的 thinking 預設比 outline、writer 低一級，可用 `stages.write.review.thinking`、`stages.write.vocabulary.thinking` 調整；writer 同時執行的數量沿用 `concurrency`。
+
+Write Run 的產出：
+
+| 檔案 | 內容 |
+|---|---|
+| `features/FEAT-*.feature` | Gherkin 需求文件，每個 Feature 一個檔；`FEAT-N1` 這類是 Clarify 中新增的功能 |
+| `03-spec.md` | 總覽：每個檔的情境數、Actor、Entity、NFR、限制、不做清單、取消與新增的 Feature、沒寫成情境的條目、未覆蓋的條目、未決題目、`@unverified` 與 `@unwritten` |
+| `03-vocabulary.md` / `.json` | 用語表，以及每一筆替換的前後文字 |
+| `03-outline.json` | Outline 與程式編好的情境 id |
+| `03-trace.json` | 每個情境、每一行、每一列 Examples 的依據，以及 Review 的紀錄 |
+| `03-written.json` | writer 寫的原文（替換前）；`--only` 以它為基礎 |
+| `03-rejected.json` | 最後一次交卷仍沒通過檢查而被排除的部分 |
+| `run.json` | 上游 Clarify Run 的 id 與 Aligned Brief 的 sha、各角色的 thinking、prompt hash、每個 agent 的指標、每個 Feature 的狀態與寫入批次 |
+| `traces/write-*`、`prompts/write-*` | 每個 agent 的過程與實際送出的 prompt；`write-FEAT-1-review<k>` 是該 Feature 第 k 次 Review，`--only` 的紀錄帶批次後綴，不覆寫第一批 |
 
 ## 可觀測性（OpenTelemetry）
 
@@ -193,7 +246,7 @@ x-plan feedback <run> --sync
 | Open Question | `--ok`、`--redundant`（文件已有答案）、`--wrong`（問錯方向） |
 | Contradiction、Assumption | `--ok`、`--wrong` |
 
-`--ok` 以外的 verdict 都要附上說明。`--missing` 記錄應該擷取卻沒擷取的事實，`--at` 指出它在 Source Document 的位置；`--score` 是對整個 Run 的 1–5 分。Clarify Run 目前只支援 `--score` 與 `--missing`。
+`--ok` 以外的 verdict 都要附上說明。`--missing` 記錄應該擷取卻沒擷取的事實，`--at` 指出它在 Source Document 的位置；`--score` 是對整個 Run 的 1–5 分。Clarify Run 與 Write Run 目前只支援 `--score` 與 `--missing`。
 
 - **只追加，不修改**。同一個人對同一條目再評價一次，會取代前一筆；`--retract` 撤回。不同人的評價並存。作者依序取自 `XPLAN_AUTHOR`、`git config user.name`、作業系統的使用者名稱。
 - 每筆評價都保存條目當下的原文，Brief 之後重跑也不影響。

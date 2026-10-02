@@ -10,4 +10,5 @@ test("the example config is valid and leaves tracing off", () => {
   const config = parseConfig(example, "x-plan.config.example.json");
   expect(config.langfuse).toEqual({ baseUrl: "http://localhost:3000", publicKeyEnv: "LANGFUSE_PUBLIC_KEY", secretKeyEnv: "LANGFUSE_SECRET_KEY" });
   expect(resolveExportTarget(config, {})).toEqual({ enabled: false });
+  expect(config.stages?.write?.vocabulary?.enabled).toBe(true);
 });

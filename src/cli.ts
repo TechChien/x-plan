@@ -9,6 +9,7 @@ import { CONFIG_FILE_NAME, findConfigPath, loadConfig, parseConfig, type XPlanCo
 import { OUTPUT_LANGUAGES, type OutputLanguage } from "./shared/language.ts";
 import { newRunId, readRunMeta, resolveRunDir, runsDir } from "./shared/runs.ts";
 import { runExtract } from "./extract/stage.ts";
+import { runWrite } from "./write/stage.ts";
 import { startTelemetry } from "./telemetry/setup.ts";
 import { feedbackAction, formatFeedback, recordFeedback, resolveAuthor, type FeedbackOptions } from "./feedback/feedback.ts";
 import { MAX_SCORE, MIN_SCORE } from "./feedback/schema.ts";
@@ -127,6 +128,56 @@ program
       if (report.status === "failed") process.exitCode = 1;
     },
   );
+
+program
+  .command("write")
+  .description("Stage 3: write the Gherkin requirements from a Clarify Run's Aligned Brief")
+  .argument("<run>", "a Clarify Run to write from, or with --only a Write Run to rewrite Features in: an id under .x-plan/runs/ or a directory")
+  .option("--only <ids...>", "rewrite these Features of an existing Write Run, keeping its outline and scenario ids")
+  .option("--out <dir>", "directory for a new Write Run (default: ./.x-plan/runs/<write-id>)")
+  .option("--allow-failed-clarify", "start from a Clarify Run whose status is failed")
+  .addOption(new Option("--lang <code>", "output language: en, zh, cn. Default: the language of the Aligned Brief").choices(OUTPUT_LANGUAGES))
+  .option("--config <path>", "config file (default: ./x-plan.config.json, then ~/.x-plan/)")
+  .action(async (runArg: string, opts: { only?: string[]; out?: string; allowFailedClarify?: boolean; lang?: OutputLanguage; config?: string }) => {
+    const cwd = process.cwd();
+    const given = resolveRunDir(cwd, runArg);
+    const stage = readRunMeta(given)?.stage;
+    let runDir: string;
+    let sourceRunDir: string | undefined;
+    if (stage === "clarify") {
+      if (opts.only) throw new Error("--only rewrites Features of a Write Run; give the Write Run, not the Clarify Run");
+      runDir = opts.out ? resolve(cwd, opts.out) : join(runsDir(cwd), newRunId("write"));
+      sourceRunDir = given;
+    } else if (stage === "write") {
+      if (!opts.only) throw new Error(`${basename(given)} is a Write Run: give --only <FEAT-id...> to rewrite Features in it, or the Clarify Run to write a new one`);
+      if (opts.out || opts.lang) throw new Error("--out and --lang only apply to a new Write Run");
+      runDir = given;
+    } else {
+      throw new Error(`${given} is not a Clarify or Write Run (no run.json with stage clarify or write)`);
+    }
+    const config = loadConfig(cwd, opts.config);
+    const log = (message: string) => console.error(`x-plan: ${message}`);
+    log(`Run directory: ${runDir}`);
+
+    const report = await withTelemetry(config, log, () => runWrite({
+      runDir,
+      sourceRunDir,
+      only: opts.only,
+      allowFailedClarify: opts.allowFailedClarify,
+      config,
+      outputLanguage: opts.lang,
+      backend: () => PiBackend.create(config, runDir),
+      log,
+    }));
+
+    for (const w of report.warnings) log(`warning: ${w}`);
+    for (const f of report.failures) log(`FAILED: ${f}`);
+    if (existsSync(join(runDir, "03-spec.md"))) log(`Gherkin: ${join(runDir, "features")}; overview: ${join(runDir, "03-spec.md")}`);
+    const failedFeatures = report.unwritten.filter((id) => id.startsWith("FEAT-"));
+    if (failedFeatures.length) log(`Rewrite with: x-plan write ${dirname(runDir) === runsDir(cwd) ? basename(runDir) : runDir} --only ${failedFeatures.join(" ")}`);
+    log(`Status: ${report.status}`);
+    if (report.status === "failed") process.exitCode = 1;
+  });
 
 program
   .command("feedback")
