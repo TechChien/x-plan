@@ -70,6 +70,39 @@ export const OutlineSubmissionSchema = Type.Object(
 );
 export type OutlineSubmission = Static<typeof OutlineSubmissionSchema>;
 
+/** An outline scenario as accepted, with the SCN id the program gave it. */
+export interface PlannedScenario extends OutlineScenario {
+  id: string;
+  featureId: string;
+  /** Index into the Feature's `rules`; absent for a scenario that belongs to no Rule. */
+  ruleIndex?: number;
+  /** `sourceIds` plus the Rule's source: what the scenario stands on. */
+  effectiveSourceIds: string[];
+}
+
+export interface PlannedFeature {
+  /** A Brief FEAT id, or `FEAT-N<n>` for a Feature Clarify added. */
+  id: string;
+  isNew: boolean;
+  name: string;
+  description: string;
+  /** New Features: the Decisions they stand on; empty for Brief Features. */
+  sourceIds: string[];
+  rules: { sourceId: string; title: string; scenarioIds: string[] }[];
+  /** Scenarios that belong to no Rule. */
+  scenarioIds: string[];
+}
+
+/** The accepted outline (ADR 0015), saved as `03-outline.json`; writers and rendering follow it. */
+export interface WriteOutline {
+  features: PlannedFeature[];
+  /** In reading order: each Feature's Rules' scenarios, then its own. */
+  scenarios: PlannedScenario[];
+  notBehavioral: OutlineSubmission["notBehavioral"];
+  /** What the last attempt still left uncovered; listed in `03-spec.md`. */
+  uncovered: string[];
+}
+
 export const StepSchema = Type.Object(
   {
     keyword: Type.Union([Type.Literal("Given"), Type.Literal("When"), Type.Literal("Then"), Type.Literal("And"), Type.Literal("But")]),

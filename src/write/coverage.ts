@@ -1,4 +1,5 @@
 import type { AlignedBrief } from "../clarify/aligned.ts";
+import type { AgendaStatus } from "../clarify/schema.ts";
 import { FACT_SECTION_NAMES } from "../extract/schema.ts";
 
 /** Why an id cannot be cited; the check turns it into the message that tells the agent what to cite instead. */
@@ -24,6 +25,8 @@ export interface CoverageSets {
    * because something that must be covered uses one of the names: the scenario for it needs the new definition.
    */
   notBehavioralBlocked: Map<string, { terms: string[]; mentionedIn: string[] }>;
+  /** Each Agenda Item's final status: open and deferred scenarios name these, never cite them. */
+  agenda: Map<string, AgendaStatus>;
 }
 
 /** Items that describe behaviour: a Decision replacing one of these, or reconciling them, has behaviour to write. */
@@ -75,7 +78,26 @@ export function coverageSets(aligned: AlignedBrief): CoverageSets {
     else notBehavioralAllowed.push(d.id);
   }
 
-  return { features, mustCover, citable, forbidden, notBehavioralAllowed, notBehavioralBlocked };
+  const agenda = new Map(aligned.agenda.map((it) => [it.id, it.status]));
+  return { features, mustCover, citable, forbidden, notBehavioralAllowed, notBehavioralBlocked, agenda };
+}
+
+/** Why `id` cannot be cited, phrased as feedback that says what to cite instead; undefined when it can be. */
+export function citationError(sets: CoverageSets, id: string): string | undefined {
+  if (sets.citable.has(id)) return undefined;
+  const reason = sets.forbidden.get(id);
+  switch (reason?.kind) {
+    case "superseded":
+      return `${id} was replaced by ${reason.by.join(", ")}; cite ${reason.by.join(", ")} instead`;
+    case "cancelled-feature":
+      return `${id} was cancelled with ${reason.featureIds.join(", ")} (${reason.by.join(", ")}); it cannot appear`;
+    case "unconfirmed-assumption":
+      return `${id} is an Assumption the user never confirmed; it cannot be cited`;
+    case "revised-decision":
+      return reason.by ? `${id} was corrected by ${reason.by}; cite ${reason.by} instead` : `${id} was corrected; cite the Decision that corrected it`;
+  }
+  if (sets.agenda.has(id)) return `${id} is an Agenda Item: list it in agendaIds of an open or deferred scenario, not in sourceIds`;
+  return `${id} is not an id in <aligned>`;
 }
 
 /** The names a Decision replacing the item redefines: a Term with its aliases, or an Actor, Entity or Dependency. */

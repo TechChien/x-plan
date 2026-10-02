@@ -89,15 +89,17 @@ Scenario = {
 1. 每個 `features` 中的 FEAT 都在 Brief 中、沒有被推翻，且只出現一次；每個 `features` 集合中的 FEAT 都有一個區塊，且至少有一個 Scenario（FEAT 的覆蓋）。
 2. `newFeature.sourceIds` 至少含一條 `notBehavioralAllowed` 中的 Decision（effect 為 `new` 的 active Decision）。
 3. **覆蓋**：`mustCover − 已覆蓋 = ∅`；已覆蓋 = 所有 Scenario 的有效 sourceIds ∪ `notBehavioral` 的 id ∪ 有 Scenario 的 FEAT 區塊。
-4. **禁止引用**：所有 sourceIds、Rule 的 `sourceId` 不得在 `forbidden` 中，也不得是不存在的 id。退回訊息指出被推翻的條目應改引用哪條 Decision。
+4. **禁止引用**：所有 sourceIds、Rule 的 `sourceId` 都必須在 `citable` 中。退回訊息依原因說明：被推翻的條目應改引用哪條 Decision、被更正的 Decision 應改引用哪條、未確認的 Assumption 不得引用、OQ 等題目要放在 `agendaIds`。`specified`、`derived` 的 Scenario 的有效 sourceIds 不得為空。
 5. 每條 AC 至少被一個 `kind` 為 `specified` 的 Scenario 引用（被推翻的 AC 不在此限）。
 6. `notBehavioral` 的 id 必須在 `notBehavioralAllowed` 中，`reason` 不得為空。BR、AC、FEAT 一律不能標。
-7. `open`、`deferred` 的 `agendaIds` 必須指向 status 分別為 `unresolved`、`deferred` 的 Agenda Item；`open` 沒有 `agendaIds` 時 `openReason` 必填。
+7. `open`、`deferred` 的 `agendaIds` 必須指向 status 分別為 `unresolved`、`deferred` 的 Agenda Item；`deferred` 至少要有一個，`open` 沒有 `agendaIds` 時 `openReason` 必填。`specified`、`derived` 的 Scenario 不得有 `agendaIds`。
 8. 引用 NFR 的 Scenario：該 NFR 必須有 `target`，或 sourceIds 中另有 active Decision；否則退回（沒有門檻的 NFR 不寫成 Scenario）。
 9. Rule 的 `sourceId` 是 BR 或 active Decision，同一個 Feature 內不重複。
 10. 語言檢查（ADR 0005）：標題、`newFeature` 的名稱與描述、`reason`、`openReason`。
 
-最後一次交卷時部分接受：違反規則 4 的 Scenario 移入 `03-rejected.json`，其餘照常收下；沒有被覆蓋的條目寫進 `03-spec.md` 的「未覆蓋」清單與 `run.json` 的 warnings。
+有錯誤的部分連同它包含的內容一起排除：區塊有錯（規則 1、2）排除整個區塊，Rule 有錯（規則 4、9）排除該 Rule 與底下的 Scenario，Scenario 有錯（規則 4、7、8）只排除該 Scenario，`notBehavioral` 有錯（規則 6）只排除該筆。覆蓋（規則 3、5）以排除後剩下的部分計算，所以被排除的 Scenario 原本覆蓋的條目會變成沒有覆蓋。語言不符（規則 10）只是警告，照常收下。
+
+最後一次交卷時部分接受：被排除的部分移入 `03-rejected.json`，其餘照常收下；沒有被覆蓋的條目寫進 `03-spec.md` 的「未覆蓋」清單與 `run.json` 的 warnings。
 
 `applyOutline` 依 Feature、Rule 的順序編號 `SCN-n`，新 Feature 編號 `FEAT-N1`、`FEAT-N2`，結果存成 `03-outline.json`。
 

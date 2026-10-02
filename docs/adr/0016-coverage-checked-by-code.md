@@ -30,7 +30,7 @@ outline 階段 steps 還不存在，所以 writer 交卷時另外檢查每個 st
 - DEC 的 effect 為 `confirm` 時不在 mustCover 中：要寫進情境的是被確認的 Assumption 的內容，引用 Decision 或 Assumption 都可以。
 - 只有一句描述、沒有任何 AC、BR、Decision 的 FEAT 也必須覆蓋：outline 寫一個只引用 FEAT、內容不超出 FEAT 原文的 Scenario，或是寫一個 `@open` 骨架指出缺少驗收條件。這類 Feature 正是 Clarify 的 gherkin-gap 應該問到卻沒問的，eval 會計數。
 - 覆蓋規則只保證**有引用**，不保證**寫對**；內容是否忠於引用的條目由 Scenario Review 檢查（ADR 0018）。
-- 共用 3 次交卷額度（ADR 0002）。最後一次交卷時部分接受：引用了 forbidden 條目的 Scenario 移入 `03-rejected.json`；仍沒被覆蓋的條目列在 `03-spec.md` 的「未覆蓋」清單與 `run.json` 的 warnings。
+- 共用 3 次交卷額度（ADR 0002）。最後一次交卷時部分接受：有錯誤的區塊、Rule 或 Scenario（例如引用了 forbidden 條目）移入 `03-rejected.json`，覆蓋以剩下的部分計算；仍沒被覆蓋的條目列在 `03-spec.md` 的「未覆蓋」清單與 `run.json` 的 warnings。
 - `notBehavioral` 的條目與理由列在 `03-spec.md`，eval 計數，用來觀察模型是否濫用。
 
 ## Considered Options
