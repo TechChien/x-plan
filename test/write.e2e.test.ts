@@ -6,6 +6,7 @@ import { describe, expect, test } from "vitest";
 import type { SessionOptions } from "../src/agent/types.ts";
 import type { AlignedBrief } from "../src/clarify/aligned.ts";
 import { parseConfig } from "../src/config.ts";
+import { recordFeedback } from "../src/feedback/feedback.ts";
 import { gherkinErrors } from "../src/write/render.ts";
 import type { ReviewSubmission } from "../src/write/review.ts";
 import type { FeatureSubmission, WriteOutline } from "../src/write/schema.ts";
@@ -140,6 +141,14 @@ describe("runWrite", () => {
       expect(existsSync(join(d.write, "prompts", `${label}.user.md`))).toBe(true);
       expect(existsSync(join(d.write, "traces", `${label}.md`))).toBe(true);
     }
+  });
+
+  test("Feedback reads the scenarios the stage wrote", async () => {
+    const d = dirs();
+    await runWrite(options(d, backend()));
+    const { entry } = recordFeedback(d.write, { type: "item", target: "SCN-3", verdict: "wrong", note: "VIP 是 14 天" }, { author: "t", now: new Date("2026-10-02T00:00:00Z") });
+    expect(entry).toMatchObject({ section: "scenarios", snapshot: { id: "SCN-3", featureId: "FEAT-1", steps: [{ text: "VIP 會員下單已 10 天", sourceIds: ["DEC-5"] }, expect.anything(), expect.anything()] } });
+    expect(() => recordFeedback(d.write, { type: "missing", text: "x", at: "FEAT-2" }, { author: "t", now: new Date() })).not.toThrow();
   });
 
   test("a writer the review stops rewrites, and the second submission is accepted", async () => {

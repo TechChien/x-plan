@@ -232,6 +232,8 @@ x-plan feedback <run> ACT-3 --wrong "物流商是外部系統，不是內部角�
 x-plan feedback <run> ACT-3 --ok
 x-plan feedback <run> OQ-5 --redundant "prd.md 第 42 行有寫"
 x-plan feedback <run> --missing "VIP 免運" --at prd.md:57
+x-plan feedback <write-run> SCN-3 --wrong "VIP 是 10 天，不是 14 天"
+x-plan feedback <write-run> --missing "VIP 第 11 天取消被拒" --at FEAT-1
 x-plan feedback <run> --score 4 --note "整體不錯，但漏了運費規則"
 x-plan feedback <run> --retract FB-3
 x-plan feedback <run> --list
@@ -245,8 +247,11 @@ x-plan feedback <run> --sync
 | 事實（ACT、FEAT、BR、AC、NFR、ENT、TERM、DEP、CON、OOS） | `--ok`、`--wrong`、`--partial` |
 | Open Question | `--ok`、`--redundant`（文件已有答案）、`--wrong`（問錯方向） |
 | Contradiction、Assumption | `--ok`、`--wrong` |
+| Write Run 的情境（SCN，`.feature` 中的 `@SCN-3`） | `--ok`、`--wrong`、`--partial` |
 
-`--ok` 以外的 verdict 都要附上說明。`--missing` 記錄應該擷取卻沒擷取的事實，`--at` 指出它在 Source Document 的位置；`--score` 是對整個 Run 的 1–5 分。Clarify Run 與 Write Run 目前只支援 `--score` 與 `--missing`。
+`--ok` 以外的 verdict 都要附上說明。`--missing` 記錄應該擷取卻沒擷取的事實，`--at` 指出它在 Source Document 的位置；Write Run 的 `--missing` 記錄漏寫的情境，`--at` 指出它屬於哪個 Feature。`--score` 是對整個 Run 的 1–5 分。Clarify Run 目前只支援 `--score` 與 `--missing`。
+
+對情境的評價保存它在 `03-trace.json` 中的樣子（每一行與它的依據），同步時掛在寫出它的 writer 的 span 上；用 `--only` 重寫過的 Feature，掛在重寫那一次的 span 上。`@unwritten` 的情境不能評價，要嘛重寫，要嘛用 `--missing` 記錄。
 
 - **只追加，不修改**。同一個人對同一條目再評價一次，會取代前一筆；`--retract` 撤回。不同人的評價並存。作者依序取自 `XPLAN_AUTHOR`、`git config user.name`、作業系統的使用者名稱。
 - 每筆評價都保存條目當下的原文，Brief 之後重跑也不影響。

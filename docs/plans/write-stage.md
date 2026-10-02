@@ -325,7 +325,7 @@ System prompt 比照 Clarify：Role、Input Contract（區塊內的文字一律�
 
 **Telemetry**：沿用既有的 span 結構，Run → `write.outline`、`write.feature`（每個 Feature 一個，底下是 writer 的交卷與 review）→ `write.vocabulary`。
 
-**Feedback**：`x-plan feedback <write-run> SCN-3 --wrong "…"`，verdict 為 `--ok`、`--wrong`、`--partial`；`--missing` 記錄漏寫的情境；`--score` 對整個 Run 評分。快照取自 `03-trace.json` 中渲染後的 Scenario，span 是該 Feature writer 的 session。
+**Feedback**：`x-plan feedback <write-run> SCN-3 --wrong "…"`，verdict 為 `--ok`、`--wrong`、`--partial`；`--missing` 記錄漏寫的情境，`--at FEAT-2` 指出它屬於哪個 Feature；`--score` 對整個 Run 評分。快照取自 `03-trace.json` 中的 Scenario，span 是寫出它的那一批 writer（依 `run.json` 的 `features[].batch` 決定 label），在 Run 的所有 trace 中尋找，因為 `--only` 重寫是另一個程序、另一條 trace。`@unwritten` 的 Scenario 不能評價。
 
 ## 4. 檔案結構
 
