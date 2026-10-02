@@ -15,7 +15,7 @@ function featureText(featureId: string, f: { aligned: AlignedBrief; outline: Wri
 }
 
 describe("renderFeature", () => {
-  test("a written Feature: tags, Rules, Background, a Scenario Outline and a deferred scenario's closing Then", () => {
+  test("a written Feature: tags, Background, scenarios without a Rule before the Rules, a Scenario Outline and a deferred scenario's closing Then", () => {
     expect(featureText("FEAT-1", fixture())).toBe(
       [
         "@FEAT-1",
@@ -24,6 +24,12 @@ describe("renderFeature", () => {
         "",
         "  Background:",
         "    Given 會員已登入",
+        "",
+        "  @SCN-4 @deferred @OQ-1 @FEAT-1",
+        "  Scenario: 已出貨的訂單取消",
+        "    Given 訂單已出貨",
+        "    When 會員取消訂單",
+        "    Then <延後 OQ-1：已出貨的訂單如何處理？>",
         "",
         "  Rule: 一般會員 7 天內可取消",
         "",
@@ -51,12 +57,6 @@ describe("renderFeature", () => {
         "      Given VIP 會員下單已 10 天",
         "      When 會員取消訂單",
         "      Then 系統接受取消",
-        "",
-        "  @SCN-4 @deferred @OQ-1 @FEAT-1",
-        "  Scenario: 已出貨的訂單取消",
-        "    Given 訂單已出貨",
-        "    When 會員取消訂單",
-        "    Then <延後 OQ-1：已出貨的訂單如何處理？>",
         "",
       ].join("\n"),
     );

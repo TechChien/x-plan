@@ -42,11 +42,12 @@ export function renderFeature(feature: PlannedFeature, ctx: FeatureRenderContext
     out.push("");
     pushScenario(out, plan, writtenById.get(id), indent, { labels, questions });
   };
+  // Scenarios without a Rule come first: Gherkin puts every scenario after a Rule into that Rule.
+  for (const id of feature.scenarioIds) scenario(id, "  ");
   for (const rule of feature.rules) {
     out.push("", `  Rule: ${oneLine(rule.title)}`);
     for (const id of rule.scenarioIds) scenario(id, "    ");
   }
-  for (const id of feature.scenarioIds) scenario(id, "  ");
   return `${out.join("\n")}\n`;
 }
 
