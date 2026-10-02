@@ -59,8 +59,12 @@ export function checkFeature(submission: FeatureSubmission, ctx: FeatureCheckCon
 
   const citeErrors = (ids: string[], allowed: Set<string>, where: string) =>
     ids.filter((id) => !allowed.has(id)).map((id) => citationError(sets, id) ?? `${id} is not in <sources> for ${where} or in <context>`);
+  // A number in a name every step is written with, such as the version in "CPE 2.3", is given to every step. A
+  // Decision in <context> is left out: what it gives is a rule, such as a new number of days.
+  const decisionIds = new Set(aligned.decisions.map((d) => d.id));
+  const nameNumbers = [...contextIds(aligned, sets)].filter((id) => !decisionIds.has(id)).flatMap((id) => numbersIn(texts.get(id) ?? "", { chinese: true }));
   const numberErrors = (text: string, sourceIds: string[]) => {
-    const given = new Set(sourceIds.flatMap((id) => numbersIn(texts.get(id) ?? "", { chinese: true })));
+    const given = new Set([...nameNumbers, ...sourceIds.flatMap((id) => numbersIn(texts.get(id) ?? "", { chinese: true }))]);
     return [...new Set(numbersIn(withoutPlaceholders(text)))]
       .filter((n) => !given.has(n))
       .map((n) => `${n} is not given by ${sourceIds.join(", ") || "any cited item"}; cite the item that gives it, or write <…> for a value no item gives`);
@@ -248,6 +252,9 @@ function verbatimStripped(text: string, names: string[]): string {
   return out;
 }
 
+/** A token that starts with a letter, `_` or `/`, such as `/api/v1/orders`, `cpe_23` or `v0.7.17`: its digits are no amount. */
+const IDENTIFIER = /[A-Za-z_/][\w./[\]-]*/g;
+
 const CHINESE_DIGITS: Record<string, number> = { 零: 0, 〇: 0, 一: 1, 二: 2, 兩: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
 
 /**
@@ -255,7 +262,7 @@ const CHINESE_DIGITS: Record<string, number> = { 零: 0, 〇: 0, 一: 1, 二: 2,
  * `chinese`, which is for source text: in a step, 一 in 一般 is not a number.
  */
 export function numbersIn(text: string, opts: { chinese?: boolean } = {}): string[] {
-  const normalized = text.replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
+  const normalized = text.replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0)).replace(IDENTIFIER, " ");
   const pattern = opts.chinese ? /\d+(?:\.\d+)?|[零〇一二兩两三四五六七八九十]+/g : /\d+(?:\.\d+)?/g;
   const out: string[] = [];
   for (const [match] of normalized.matchAll(pattern)) {

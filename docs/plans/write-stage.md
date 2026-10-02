@@ -135,7 +135,7 @@ Step = { "keyword": "Given" | "When" | "Then" | "And" | "But", "text": "…", "s
 1. `scenarios` 的 id 集合剛好等於本 Feature 在 outline 中的 SCN。
 2. **允許清單**：每個 step、每個 Examples 列的 sourceIds 只能是該 Scenario 在 outline 中的有效 sourceIds，加上 `<context>` 中的條目與本 Feature 的 FEAT。forbidden 的條目不會出現在 writer 的輸入中，這條規則同時涵蓋了禁止引用。
 3. Scenario Outline：每個 header 欄位都要出現在 steps 的 `<欄位>` 中；每列的格數等於欄數。`kind` 為 `derived` 的 Scenario，所有 Examples 區塊都必須是 `derived`。
-4. **數值出處**：不是 `derived` 的內容中，steps 與 Examples 的阿拉伯數字（先把全形數字與一到九十九的中文數字正規化）必須出現在它引用的條目文字中（事實的欄位、Decision 的結論與使用者原話；不含 Evidence 引文，理由見 §2）。`<…>` 佔位內的文字不檢查。
+4. **數值出處**：不是 `derived` 的內容中，steps 與 Examples 的阿拉伯數字（先把全形數字與一到九十九的中文數字正規化）必須出現在它引用的條目文字中（事實的欄位、Decision 的結論與使用者原話；不含 Evidence 引文，理由見 §2）。`<…>` 佔位內的文字不檢查。以字母、`_` 或 `/` 開頭的識別名稱（`/api/v1/orders`、`cpe_23`、`v0.7.17`）中的數字不是數值，不檢查。`<context>` 中 Actor、Term、Domain Entity、Dependency 的數字（例如「CPE 2.3」的版本）視為每個 step 都有出處；取代它們而列在 `<context>` 的 Decision 不算，它給的是規則，例如新的天數。
 5. `openReason` 只能填在 outline 中為 `specified`、`derived` 的 Scenario 上。
 6. **Then**：`specified`、`derived` 的 Scenario 至少要有一個 Then；`open`、`deferred`（包括 writer 降級的）不得有 Then，最後一行由程式產生。
 7. 語言檢查（ADR 0005）：描述、Background、step、Examples 名稱與 cells。Term、Actor、Entity、Dependency 的原名、`<…>` 佔位內容與引號（「」、『』、""、“”）中的原文值先移除再檢查。

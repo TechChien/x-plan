@@ -323,7 +323,7 @@ Call \`submit_feature\` once with \`description\`, \`background\` and \`scenario
 - Steps are declarative, in business language: "Given the member is a VIP", not "Given I click the VIP tab". Describe screens, fields or clicks only when a source does.
 - The subject of a step is an Actor's name, and things are named as the Terms and Domain Entities name them.
 - Use a Scenario Outline only when several examples share the same steps and differ only in values. Examples the sources state and derived examples go in separate Examples blocks, because a block, not a row, is marked derived.
-- In a scenario or Examples block that is not derived, every number comes from an item the step or row cites. Write a value no item gives as a placeholder.
+- In a scenario or Examples block that is not derived, every number comes from an item the step or row cites. Write a value no item gives as a placeholder. Digits in an identifier such as \`/api/v1/orders\`, and numbers in the names \`<context>\` gives, need no citation: keep them as they are.
 
 ### Language
 - Write every field in Traditional Chinese (繁體中文), whatever language the source documents are written in. The examples in these instructions only show structure; their language never decides yours.

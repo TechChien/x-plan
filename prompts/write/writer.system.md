@@ -31,7 +31,7 @@ Follow these steps in order.
 Call `submit_feature` once with `description`, `background` and `scenarios`: exactly one entry per scenario in `<feature>`, with its `id`, `steps` and `examples` (empty for a plain scenario), and `openReason` only as described above.
 
 {{> write/scenario-rules}}
-- In a scenario or Examples block that is not derived, every number comes from an item the step or row cites. Write a value no item gives as a placeholder.
+- In a scenario or Examples block that is not derived, every number comes from an item the step or row cites. Write a value no item gives as a placeholder. Digits in an identifier such as `/api/v1/orders`, and numbers in the names `<context>` gives, need no citation: keep them as they are.
 
 {{> shared/language-policy}}
 

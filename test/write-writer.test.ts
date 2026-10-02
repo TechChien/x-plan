@@ -161,6 +161,20 @@ describe("checkFeature", () => {
       expect(messages(result)).toEqual(["scenarios[0].steps[1]: 3 is not given by FEAT-1; cite the item that gives it, or write <…> for a value no item gives"]);
     });
 
+    test("digits inside an identifier, such as an endpoint path, are not numbers", () => {
+      expect(messages(check(edit((f) => (f.scenarios[0]!.steps[1]!.text = "會員透過 POST /api/v1/orders 取消訂單"))))).toEqual([]);
+    });
+
+    test("a number in a name every step is written with counts as given, but not one a Decision in <context> gives", () => {
+      const aligned = alignedFixture();
+      aligned.brief.actors[0]!.description = "以 CPE 2.3 識別的購買者";
+      expect(messages(check(edit((f) => (f.scenarios[0]!.steps[1]!.text = "會員取消 CPE 2.3 訂單")), { aligned }))).toEqual([]);
+      // DEC-6 is in <context> because it replaced TERM-1, but its 7 days is a rule, not a name.
+      expect(messages(check(edit((f) => (f.scenarios[0]!.steps[1]!.text = "會員在下單後 7 天內取消訂單"))))).toEqual([
+        "scenarios[0].steps[1]: 7 is not given by FEAT-1; cite the item that gives it, or write <…> for a value no item gives",
+      ]);
+    });
+
     test("derived content and placeholders are not checked", () => {
       expect(messages(check(edit((f) => (f.scenarios[1]!.steps[0]!.text = "一般會員下單已 <天數> 天，金額 <超過 1000 元>"))))).toEqual([]);
     });
@@ -218,5 +232,10 @@ describe("numbersIn", () => {
     expect(numbersIn("第 7 天、１０ 天、2.5 秒")).toEqual(["7", "10", "2.5"]);
     expect(numbersIn("七天、十天、十五天、二十天、兩天", { chinese: true })).toEqual(["7", "10", "15", "20", "2"]);
     expect(numbersIn("一般會員")).toEqual([]);
+  });
+
+  test("skips digits inside identifiers, but reads a number with a unit after it", () => {
+    expect(numbersIn("POST /api/v1/inventory/collect、cpe_23、v0.7.17、x86_64、HTTP/2")).toEqual([]);
+    expect(numbersIn("回應 2s、上限 5GB、第3天")).toEqual(["2", "5", "3"]);
   });
 });
