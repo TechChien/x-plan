@@ -21,7 +21,7 @@ _Avoid_: Parse, ingest
 _Avoid_: Grill, interview, Q&A
 
 **Write**:
-第三個 Stage：依據對齊後的需求寫出 Gherkin 需求文件。
+第三個 Stage：依據 Aligned Brief 寫出 Gherkin 需求文件，過程中不與使用者互動。
 _Avoid_: Generate, render
 
 ## 需求資訊
@@ -139,6 +139,32 @@ _Avoid_: Conflict detector, validator, contradiction check
 **Aligned Brief**:
 Clarify 的產出：原樣保留的 Requirement Brief，加上全部 Decision 與每個 Agenda Item 的最終狀態，是 Write 唯一的輸入。
 _Avoid_: Final brief, clarified brief
+
+## 撰寫
+
+**Outline**:
+Write 中先決定要寫哪些 Feature、Rule 與 Scenario 的大綱：每個 Scenario 只有標題、種類與它引用的條目，不含 steps；由看得到整份 Aligned Brief 的單一 agent 產生，Coverage 在這一層由程式檢查。
+_Avoid_: Plan, skeleton, draft
+
+**Coverage**:
+Write 中由程式檢查的規則：未被推翻的 Feature、Business Rule、Acceptance Criterion，以及效果不是確認 Assumption 的有效 Decision，都必須被某個 Scenario 引用，或明確標為不是行為並附上理由；被推翻的條目、未被確認的 Assumption 不得被引用。
+_Avoid_: Completeness check, traceability check
+
+**Derived Scenario**:
+由 Business Rule 或 Decision 必然推得、而不是原文或使用者明說的 Scenario 或 Examples，例如由「7 天內可退」推出第 8 天不可退；一律標 `@derived`，規則沒給的值只能寫成佔位，不得編造。
+_Avoid_: Inferred scenario, generated case, edge case
+
+**Scenario Review**:
+Write 中，每個 Feature 的 Scenario 寫入前的檢查：由另一個 agent 確認每個 step 都來自它引用的條目、Derived Scenario 確實必然推得、數值都有出處；它只挑錯，修正一律由寫 steps 的 agent 處理。比對的是 Gherkin 與 Aligned Brief 的條目，不是 Clarify 的 Grounding Review。
+_Avoid_: Grounding review, verifier, validation
+
+**Vocabulary Normalization**:
+Write 中，全部 Feature 寫完之後統一用語的步驟：由一個 agent 整理出 Vocabulary，並指出哪些地方要把哪個說法換成標準用語；替換由程式逐字執行並記錄。
+_Avoid_: Glossary, terminology alignment, normalizer
+
+**Vocabulary**:
+Vocabulary Normalization 的產出：每個概念一個標準用語，附上定義、要避免的說法與出處。標準用語優先取 Term、Actor、Domain Entity 的原名，其次是使用者在 Decision 中的用詞；與 Term 不同，它涵蓋 Gherkin 中出現的所有說法，不要求原文有定義。
+_Avoid_: Glossary, dictionary, term list
 
 ## 評價
 
