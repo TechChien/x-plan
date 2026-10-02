@@ -1,18 +1,15 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parse as parseYaml } from "yaml";
 import { describe, expect, test } from "vitest";
-import type { SessionOptions } from "../src/agent/types.ts";
 import type { AlignedBrief } from "../src/clarify/aligned.ts";
 import { parseConfig } from "../src/config.ts";
 import { recordFeedback } from "../src/feedback/feedback.ts";
 import { gherkinErrors } from "../src/write/render.ts";
-import type { ReviewSubmission } from "../src/write/review.ts";
 import type { FeatureSubmission, WriteOutline } from "../src/write/schema.ts";
 import { runWrite, type WriteOptions } from "../src/write/stage.ts";
-import { ScriptedBackend, type ScriptedTurn } from "./helpers/scripted-backend.ts";
-import { alignedFixture, step, validFeature, validOutline } from "./helpers/write.ts";
+import type { ScriptedBackend, ScriptedTurn } from "./helpers/scripted-backend.ts";
+import { alignedFixture, approving, feature2, flagging, validFeature, validOutline, writeBackend as backend } from "./helpers/write.ts";
 
 /** Writers run one at a time so sessions come in outline order: FEAT-1's writer and reviews, then FEAT-2's. */
 const config = parseConfig({ provider: { baseUrl: "http://unused" }, concurrency: 1 });
@@ -29,68 +26,6 @@ function dirs(meta: Record<string, unknown> = {}, aligned: AlignedBrief = aligne
   writeFileSync(join(clarify, "02-aligned.json"), `${JSON.stringify(aligned, null, 2)}\n`);
   writeFileSync(join(clarify, "run.json"), JSON.stringify({ stage: "clarify", status: "succeeded", outputLanguage: "zh", ...meta }));
   return { clarify, write: join(root, "write-20261001-1100-bbbbbb") };
-}
-
-/** FEAT-2: SCN-5 specified (AC-1, DEC-6, BR-3), SCN-6 open (OQ-4), SCN-7 specified (NFR-1). "使用者" is for the vocabulary. */
-function feature2(): FeatureSubmission {
-  return {
-    description: "會員可以申請退貨",
-    background: [],
-    scenarios: [
-      { id: "SCN-5", steps: [step("Given", "使用者的商品到貨第 2 天", ["AC-1"]), step("When", "會員申請退貨", ["FEAT-2"]), step("Then", "系統接受退貨", ["AC-1"])], examples: [] },
-      { id: "SCN-6", steps: [step("Given", "會員有一筆退貨", ["FEAT-2"])], examples: [] },
-      { id: "SCN-7", steps: [step("When", "會員送出退貨申請", ["FEAT-2"]), step("Then", "系統在 2 秒內回應", ["NFR-1"])], examples: [] },
-    ],
-  };
-}
-
-/** A Scenario Review that finds every line stated by what it cites, built from the units in its prompt. */
-function reviewFrom(prompt: string, flag?: { unit: string; ref: string }): ReviewSubmission {
-  const view = parseYaml(prompt.slice(prompt.indexOf("<review>") + "<review>".length, prompt.indexOf("</review>"))) as {
-    scenarios: { unit: string; lines: { ref: string }[] }[];
-  };
-  return {
-    reviews: view.scenarios.map((u) => ({
-      unit: u.unit,
-      lines: u.lines.map((l) => ({ ref: l.ref, grounding: "stated" as const, contradicts: flag?.unit === u.unit && flag.ref === l.ref, values: [], actualSourceIds: [] })),
-    })),
-  };
-}
-const approving: ScriptedTurn = { respond: (p) => reviewFrom(p) };
-const flagging = (unit: string, ref: string): ScriptedTurn => ({ respond: (p) => reviewFrom(p, { unit, ref }) });
-const vocabularyCall: ScriptedTurn = {
-  call: { entries: [{ canonical: "會員", definition: "在平台註冊的購買者", avoid: ["使用者"], sourceIds: ["ACT-1"] }], replacements: [{ loc: "SCN-5/step/0", from: "使用者", to: "會員" }] },
-};
-
-interface Scripts {
-  outline?: ScriptedTurn[];
-  /** Writer sessions in the order they start. */
-  writers?: ScriptedTurn[][];
-  /** Review sessions in the order they start. */
-  reviews?: ScriptedTurn[][];
-  vocabulary?: ScriptedTurn[];
-}
-
-function backend(s: Scripts = {}): ScriptedBackend & { tools: string[] } {
-  const tools: string[] = [];
-  const queue = { writers: [...(s.writers ?? [[{ call: validFeature() }], [{ call: feature2() }]])], reviews: [...(s.reviews ?? [])] };
-  const b = new ScriptedBackend((options: SessionOptions) => {
-    tools.push(options.tool.name);
-    switch (options.tool.name) {
-      case "submit_outline":
-        return s.outline ?? [{ call: validOutline() }];
-      case "submit_feature":
-        return queue.writers.shift() ?? [];
-      case "submit_review":
-        return queue.reviews.shift() ?? [approving];
-      case "submit_vocabulary":
-        return s.vocabulary ?? [vocabularyCall];
-      default:
-        return [];
-    }
-  }) as ScriptedBackend & { tools: string[] };
-  b.tools = tools;
-  return b;
 }
 
 function options(d: Dirs, b: ScriptedBackend, extra: Partial<WriteOptions> = {}): WriteOptions {

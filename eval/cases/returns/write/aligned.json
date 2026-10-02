@@ -1,0 +1,780 @@
+{
+  "source": {
+    "stage": "extract",
+    "runId": "extract-fixture",
+    "sha256": "fixture"
+  },
+  "outputLanguage": "zh",
+  "termination": "done",
+  "brief": {
+    "actors": [
+      {
+        "id": "ACT-1",
+        "name": "會員",
+        "description": "已註冊並登入的購物者",
+        "responsibilities": [
+          "取消訂單",
+          "申請退貨"
+        ],
+        "evidence": [
+          {
+            "file": "prd.md",
+            "lineStart": 4,
+            "lineEnd": 4,
+            "quote": "- 會員：已註冊並登入的購物者。"
+          }
+        ]
+      },
+      {
+        "id": "ACT-2",
+        "name": "客服人員",
+        "description": "處理會員退貨申請的內部人員",
+        "responsibilities": [
+          "審核退貨申請"
+        ],
+        "evidence": [
+          {
+            "file": "prd.md",
+            "lineStart": 5,
+            "lineEnd": 5,
+            "quote": "- 客服人員：處理會員退貨申請的內部人員。"
+          }
+        ]
+      }
+    ],
+    "features": [
+      {
+        "id": "FEAT-1",
+        "name": "取消訂單",
+        "description": "會員在期限內取消訂單並取得退款",
+        "actorIds": [
+          "ACT-1"
+        ],
+        "inputs": [
+          "訂單"
+        ],
+        "outputs": [
+          "退款"
+        ],
+        "dependsOn": [
+          "DEP-1"
+        ],
+        "evidence": [
+          {
+            "file": "prd.md",
+            "lineStart": 9,
+            "lineEnd": 9,
+            "quote": "會員可於下單後 3 天內取消訂單。"
+          }
+        ]
+      },
+      {
+        "id": "FEAT-2",
+        "name": "申請退貨",
+        "description": "會員收到商品後在會員中心申請退貨，由客服審核",
+        "actorIds": [
+          "ACT-1",
+          "ACT-2"
+        ],
+        "inputs": [
+          "訂單",
+          "退貨原因"
+        ],
+        "outputs": [
+          "退貨申請"
+        ],
+        "dependsOn": [],
+        "evidence": [
+          {
+            "file": "prd.md",
+            "lineStart": 14,
+            "lineEnd": 14,
+            "quote": "會員收到商品後可以在會員中心申請退貨。"
+          }
+        ]
+      }
+    ],
+    "businessRules": [
+      {
+        "id": "BR-1",
+        "rule": "會員可於下單後 3 天內取消訂單",
+        "featureIds": [
+          "FEAT-1"
+        ],
+        "conditions": [
+          "下單後 3 天內"
+        ],
+        "evidence": [
+          {
+            "file": "prd.md",
+            "lineStart": 9,
+            "lineEnd": 9,
+            "quote": "會員可於下單後 3 天內取消訂單。"
+          }
+        ]
+      },
+      {
+        "id": "BR-2",
+        "rule": "下單後 7 天內都可以取消訂單",
+        "featureIds": [
+          "FEAT-1"
+        ],
+        "conditions": [
+          "下單後 7 天內"
+        ],
+        "evidence": [
+          {
+            "file": "faq.md",
+            "lineStart": 4,
+            "lineEnd": 4,
+            "quote": "A: 可以，下單後 7 天內都可以取消喔。"
+          }
+        ]
+      },
+      {
+        "id": "BR-3",
+        "rule": "退貨申請需經客服人員審核",
+        "featureIds": [
+          "FEAT-2"
+        ],
+        "conditions": [],
+        "evidence": [
+          {
+            "file": "prd.md",
+            "lineStart": 15,
+            "lineEnd": 15,
+            "quote": "退貨申請需經客服人員審核。"
+          }
+        ]
+      },
+      {
+        "id": "BR-4",
+        "rule": "退貨必須在鑑賞期內提出",
+        "featureIds": [
+          "FEAT-2"
+        ],
+        "conditions": [
+          "鑑賞期內"
+        ],
+        "evidence": [
+          {
+            "file": "faq.md",
+            "lineStart": 10,
+            "lineEnd": 10,
+            "quote": "A: 退貨必須在鑑賞期內提出。"
+          }
+        ]
+      }
+    ],
+    "acceptanceCriteria": [
+      {
+        "id": "AC-1",
+        "featureId": "FEAT-1",
+        "kind": "hint",
+        "text": "取消後應退款至原付款方式",
+        "evidence": [
+          {
+            "file": "prd.md",
+            "lineStart": 10,
+            "lineEnd": 10,
+            "quote": "取消後應退款至原付款方式。"
+          }
+        ]
+      }
+    ],
+    "nonFunctional": [
+      {
+        "id": "NFR-1",
+        "category": "performance",
+        "requirement": "退貨申請頁面回應快速",
+        "metric": "頁面回應時間",
+        "target": "< 2 秒",
+        "evidence": [
+          {
+            "file": "prd.md",
+            "lineStart": 22,
+            "lineEnd": 22,
+            "quote": "- 退貨申請頁面回應時間需小於 2 秒。"
+          }
+        ]
+      }
+    ],
+    "domainEntities": [],
+    "glossary": [
+      {
+        "id": "TERM-1",
+        "term": "SKU",
+        "definition": "庫存單位，每一個商品規格對應一個 SKU",
+        "aliases": [
+          "庫存單位"
+        ],
+        "evidence": [
+          {
+            "file": "prd.md",
+            "lineStart": 19,
+            "lineEnd": 19,
+            "quote": "- SKU：庫存單位，每一個商品規格對應一個 SKU。"
+          }
+        ]
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "DEP-1",
+        "name": "金流閘道",
+        "type": "external",
+        "description": "處理退款的外部金流服務",
+        "evidence": [
+          {
+            "file": "faq.md",
+            "lineStart": 7,
+            "lineEnd": 7,
+            "quote": "A: 退款會經由金流閘道處理，約 5 到 7 個工作天入帳。"
+          }
+        ]
+      }
+    ],
+    "constraints": [],
+    "outOfScope": [
+      {
+        "id": "OOS-1",
+        "item": "跨境訂單退貨",
+        "evidence": [
+          {
+            "file": "prd.md",
+            "lineStart": 25,
+            "lineEnd": 25,
+            "quote": "第一版不支援跨境訂單退貨。"
+          }
+        ]
+      }
+    ],
+    "openQuestions": [
+      {
+        "id": "OQ-1",
+        "question": "已出貨的訂單能否取消？若不能，應如何處理？",
+        "reason": "文件標示 TBD",
+        "relatedIds": [
+          "FEAT-1"
+        ],
+        "severity": "blocking",
+        "evidence": [
+          {
+            "file": "prd.md",
+            "lineStart": 11,
+            "lineEnd": 11,
+            "quote": "已出貨的訂單如何處理：TBD。"
+          }
+        ]
+      },
+      {
+        "id": "OQ-2",
+        "question": "退貨運費由誰負擔？",
+        "reason": "文件標示待確認",
+        "relatedIds": [
+          "FEAT-2"
+        ],
+        "severity": "high",
+        "evidence": [
+          {
+            "file": "prd.md",
+            "lineStart": 16,
+            "lineEnd": 16,
+            "quote": "退貨運費由誰負擔待確認。"
+          }
+        ]
+      },
+      {
+        "id": "OQ-3",
+        "question": "鑑賞期是幾天？",
+        "reason": "FAQ 使用「鑑賞期」但未定義天數",
+        "relatedIds": [
+          "BR-4",
+          "FEAT-2"
+        ],
+        "severity": "high",
+        "evidence": [
+          {
+            "file": "faq.md",
+            "lineStart": 10,
+            "lineEnd": 10,
+            "quote": "A: 退貨必須在鑑賞期內提出。"
+          }
+        ]
+      }
+    ],
+    "contradictions": [
+      {
+        "id": "CTR-1",
+        "conflict": "取消訂單的期限在 PRD 為下單後 3 天，在 FAQ 為 7 天",
+        "relatedIds": [
+          "BR-1",
+          "BR-2"
+        ],
+        "evidence": [
+          {
+            "file": "prd.md",
+            "lineStart": 9,
+            "lineEnd": 9,
+            "quote": "會員可於下單後 3 天內取消訂單。"
+          },
+          {
+            "file": "faq.md",
+            "lineStart": 4,
+            "lineEnd": 4,
+            "quote": "A: 可以，下單後 7 天內都可以取消喔。"
+          }
+        ]
+      }
+    ],
+    "assumptions": [
+      {
+        "id": "ASM-1",
+        "assumption": "取消訂單與申請退貨都需要會員登入",
+        "rationale": "會員定義為已登入的購物者",
+        "confidence": "medium",
+        "relatedIds": [
+          "FEAT-1",
+          "FEAT-2"
+        ]
+      },
+      {
+        "id": "ASM-2",
+        "assumption": "取消與退貨的退款都約 5 到 7 個工作天入帳",
+        "rationale": "FAQ 只說退款約 5 到 7 個工作天，未區分情境",
+        "confidence": "low",
+        "relatedIds": [
+          "DEP-1",
+          "FEAT-1",
+          "FEAT-2"
+        ]
+      }
+    ],
+    "traceability": []
+  },
+  "supersededBy": {
+    "BR-1": [
+      "DEC-1"
+    ],
+    "ASM-2": [
+      "DEC-7"
+    ]
+  },
+  "confirmedBy": {
+    "ASM-1": [
+      "DEC-6"
+    ]
+  },
+  "decisions": [
+    {
+      "id": "DEC-1",
+      "round": 2,
+      "status": "active",
+      "answerRef": "R1/CTR-1",
+      "resolves": [
+        "CTR-1"
+      ],
+      "conclusion": "一般會員可於下單後 7 天內取消訂單",
+      "supersedes": [
+        "BR-1"
+      ],
+      "confirms": [],
+      "revises": [],
+      "relatedIds": [],
+      "effect": "replace",
+      "answerText": "以 7 天為準，3 天是舊版文件；VIP 會員是 14 天"
+    },
+    {
+      "id": "DEC-2",
+      "round": 2,
+      "status": "active",
+      "answerRef": "R1/CTR-1",
+      "resolves": [
+        "CTR-1"
+      ],
+      "conclusion": "VIP 會員可於下單後 14 天內取消訂單",
+      "supersedes": [],
+      "confirms": [],
+      "revises": [],
+      "relatedIds": [
+        "BR-2",
+        "FEAT-1"
+      ],
+      "effect": "reconcile",
+      "answerText": "以 7 天為準，3 天是舊版文件；VIP 會員是 14 天"
+    },
+    {
+      "id": "DEC-3",
+      "round": 2,
+      "status": "active",
+      "answerRef": "R1/OQ-1",
+      "resolves": [
+        "OQ-1"
+      ],
+      "conclusion": "已出貨的訂單不能取消，會員須在收到商品後改為申請退貨",
+      "supersedes": [],
+      "confirms": [],
+      "revises": [],
+      "relatedIds": [
+        "FEAT-1",
+        "FEAT-2"
+      ],
+      "effect": "new",
+      "answerText": "已出貨就不能取消，只能等收到後申請退貨"
+    },
+    {
+      "id": "DEC-4",
+      "round": 2,
+      "status": "active",
+      "answerRef": "R1/OQ-2",
+      "resolves": [
+        "OQ-2"
+      ],
+      "conclusion": "商品瑕疵的退貨運費由平台負擔，個人因素退貨的運費由會員負擔",
+      "supersedes": [],
+      "confirms": [],
+      "revises": [],
+      "relatedIds": [
+        "FEAT-2"
+      ],
+      "effect": "new",
+      "answerText": "商品瑕疵由平台負擔運費，個人因素退貨由會員負擔"
+    },
+    {
+      "id": "DEC-5",
+      "round": 3,
+      "status": "active",
+      "answerRef": "R2/FQ-1",
+      "resolves": [
+        "FQ-1",
+        "OQ-3"
+      ],
+      "conclusion": "鑑賞期為收到商品隔天起算 7 天",
+      "supersedes": [],
+      "confirms": [],
+      "revises": [],
+      "relatedIds": [
+        "BR-4"
+      ],
+      "effect": "new",
+      "answerText": "從收到商品的隔天開始算"
+    },
+    {
+      "id": "DEC-6",
+      "round": 3,
+      "status": "active",
+      "answerRef": "R2/ASM-1",
+      "resolves": [
+        "ASM-1"
+      ],
+      "conclusion": "取消訂單與申請退貨都需要會員登入",
+      "supersedes": [],
+      "confirms": [
+        "ASM-1"
+      ],
+      "revises": [],
+      "relatedIds": [],
+      "effect": "confirm",
+      "answerText": "對，兩者都要登入；另外退貨運費一律由平台吸收"
+    },
+    {
+      "id": "DEC-7",
+      "round": 3,
+      "status": "active",
+      "answerRef": "R2/ASM-2",
+      "resolves": [
+        "ASM-2"
+      ],
+      "conclusion": "取消訂單的退款於 5 到 7 個工作天入帳；退貨的退款於客服審核通過後 10 個工作天入帳",
+      "supersedes": [
+        "ASM-2"
+      ],
+      "confirms": [],
+      "revises": [],
+      "relatedIds": [
+        "FEAT-1",
+        "FEAT-2",
+        "DEP-1"
+      ],
+      "effect": "replace",
+      "answerText": "不對，取消是 5 到 7 個工作天，退貨要客服審核通過後再 10 個工作天"
+    },
+    {
+      "id": "DEC-8",
+      "round": 3,
+      "status": "active",
+      "answerRef": "R2/FQ-2",
+      "resolves": [
+        "FQ-2"
+      ],
+      "conclusion": "退貨申請送出後，系統顯示退貨申請編號；審核結果以通知告知會員",
+      "supersedes": [],
+      "confirms": [],
+      "revises": [],
+      "relatedIds": [
+        "FEAT-2"
+      ],
+      "effect": "new",
+      "answerText": "送出後顯示退貨申請編號，審核結果以通知告知會員"
+    },
+    {
+      "id": "DEC-9",
+      "round": 3,
+      "status": "revised",
+      "answerRef": "R2/ASM-1",
+      "resolves": [
+        "ASM-1"
+      ],
+      "conclusion": "退貨運費一律由平台吸收",
+      "supersedes": [],
+      "confirms": [],
+      "revises": [],
+      "relatedIds": [
+        "FEAT-2"
+      ],
+      "effect": "new",
+      "answerText": "對，兩者都要登入；另外退貨運費一律由平台吸收",
+      "revisedBy": "DEC-10"
+    },
+    {
+      "id": "DEC-10",
+      "round": 4,
+      "status": "active",
+      "answerRef": "R3/FQ-3",
+      "resolves": [
+        "FQ-3"
+      ],
+      "conclusion": "平台吸收退貨運費只適用於商品瑕疵；個人因素退貨的運費由會員負擔",
+      "supersedes": [],
+      "confirms": [],
+      "revises": [
+        "DEC-9"
+      ],
+      "relatedIds": [
+        "DEC-4"
+      ],
+      "effect": "reconcile",
+      "answerText": "以先前為準：商品瑕疵由平台負擔，個人因素退貨由會員負擔；平台吸收只適用於瑕疵品"
+    }
+  ],
+  "agenda": [
+    {
+      "id": "CTR-1",
+      "kind": "CTR",
+      "origin": "brief",
+      "status": "decided",
+      "question": "取消訂單期限 PRD 寫 3 天、FAQ 寫 7 天，以哪個為準？",
+      "relatedIds": [
+        "BR-1",
+        "BR-2"
+      ],
+      "resolvedBy": [
+        "DEC-1",
+        "DEC-2"
+      ],
+      "answers": [
+        {
+          "ref": "R1/CTR-1",
+          "kind": "text",
+          "text": "以 7 天為準，3 天是舊版文件；VIP 會員是 14 天"
+        }
+      ]
+    },
+    {
+      "id": "OQ-1",
+      "kind": "OQ",
+      "origin": "brief",
+      "status": "decided",
+      "question": "已出貨的訂單能否取消？若不能，應如何處理？",
+      "relatedIds": [
+        "FEAT-1"
+      ],
+      "resolvedBy": [
+        "DEC-3"
+      ],
+      "answers": [
+        {
+          "ref": "R1/OQ-1",
+          "kind": "text",
+          "text": "已出貨就不能取消，只能等收到後申請退貨"
+        }
+      ]
+    },
+    {
+      "id": "OQ-2",
+      "kind": "OQ",
+      "origin": "brief",
+      "status": "decided",
+      "question": "退貨運費由誰負擔？",
+      "relatedIds": [
+        "FEAT-2"
+      ],
+      "resolvedBy": [
+        "DEC-4"
+      ],
+      "answers": [
+        {
+          "ref": "R1/OQ-2",
+          "kind": "accept",
+          "text": "商品瑕疵由平台負擔運費，個人因素退貨由會員負擔"
+        }
+      ]
+    },
+    {
+      "id": "OQ-3",
+      "kind": "OQ",
+      "origin": "brief",
+      "status": "decided",
+      "question": "鑑賞期是幾天？",
+      "relatedIds": [
+        "BR-4",
+        "FEAT-2"
+      ],
+      "resolvedBy": [
+        "DEC-5"
+      ],
+      "answers": [
+        {
+          "ref": "R1/OQ-3",
+          "kind": "text",
+          "text": "鑑賞期就是 7 天"
+        }
+      ]
+    },
+    {
+      "id": "FQ-1",
+      "kind": "FQ",
+      "origin": "follow-up",
+      "status": "decided",
+      "question": "鑑賞期的 7 天從哪一天開始起算？",
+      "relatedIds": [
+        "BR-4"
+      ],
+      "parentId": "OQ-3",
+      "resolvedBy": [
+        "DEC-5"
+      ],
+      "answers": [
+        {
+          "ref": "R2/FQ-1",
+          "kind": "text",
+          "text": "從收到商品的隔天開始算"
+        }
+      ]
+    },
+    {
+      "id": "ASM-1",
+      "kind": "ASM",
+      "origin": "brief",
+      "status": "decided",
+      "question": "取消訂單與申請退貨是否都需要登入？",
+      "relatedIds": [
+        "FEAT-1",
+        "FEAT-2"
+      ],
+      "resolvedBy": [
+        "DEC-6"
+      ],
+      "answers": [
+        {
+          "ref": "R2/ASM-1",
+          "kind": "text",
+          "text": "對，兩者都要登入；另外退貨運費一律由平台吸收"
+        }
+      ]
+    },
+    {
+      "id": "ASM-2",
+      "kind": "ASM",
+      "origin": "brief",
+      "status": "decided",
+      "question": "取消與退貨的退款是否都約 5 到 7 個工作天入帳？",
+      "relatedIds": [
+        "DEP-1",
+        "FEAT-1",
+        "FEAT-2"
+      ],
+      "resolvedBy": [
+        "DEC-7"
+      ],
+      "answers": [
+        {
+          "ref": "R2/ASM-2",
+          "kind": "text",
+          "text": "不對，取消是 5 到 7 個工作天，退貨要客服審核通過後再 10 個工作天"
+        }
+      ]
+    },
+    {
+      "id": "FQ-2",
+      "kind": "FQ",
+      "origin": "gherkin-gap",
+      "status": "decided",
+      "question": "退貨申請送出後，會員會看到什麼？審核結果如何告知？",
+      "relatedIds": [
+        "FEAT-2"
+      ],
+      "resolvedBy": [
+        "DEC-8"
+      ],
+      "answers": [
+        {
+          "ref": "R2/FQ-2",
+          "kind": "text",
+          "text": "送出後顯示退貨申請編號，審核結果以通知告知會員"
+        }
+      ]
+    },
+    {
+      "id": "FQ-3",
+      "kind": "FQ",
+      "origin": "conflict",
+      "status": "decided",
+      "question": "退貨運費「一律由平台吸收」與「個人因素由會員負擔」不能同時成立，以哪一個為準？",
+      "relatedIds": [
+        "DEC-4",
+        "DEC-9"
+      ],
+      "resolvedBy": [
+        "DEC-10"
+      ],
+      "answers": [
+        {
+          "ref": "R3/FQ-3",
+          "kind": "text",
+          "text": "以先前為準：商品瑕疵由平台負擔，個人因素退貨由會員負擔；平台吸收只適用於瑕疵品"
+        }
+      ]
+    },
+    {
+      "id": "FQ-4",
+      "kind": "FQ",
+      "origin": "gherkin-gap",
+      "status": "deferred",
+      "question": "客服審核退貨申請要在幾個工作天內完成？",
+      "relatedIds": [
+        "BR-3",
+        "FEAT-2"
+      ],
+      "answers": [
+        {
+          "ref": "R3/FQ-4",
+          "kind": "defer",
+          "text": "待營運確認"
+        }
+      ]
+    },
+    {
+      "id": "FQ-5",
+      "kind": "FQ",
+      "origin": "gherkin-gap",
+      "status": "unresolved",
+      "question": "客服審核不通過時，會員會看到什麼？",
+      "relatedIds": [
+        "BR-3",
+        "FEAT-2"
+      ],
+      "answers": []
+    }
+  ]
+}

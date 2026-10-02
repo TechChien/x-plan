@@ -1,9 +1,13 @@
+import { parse as parseYaml } from "yaml";
+import type { SessionOptions } from "../../src/agent/types.ts";
 import type { AlignedBrief, AlignedDecision } from "../../src/clarify/aligned.ts";
 import type { RequirementBrief } from "../../src/extract/schema.ts";
 import { coverageSets } from "../../src/write/coverage.ts";
 import { applyOutline, checkOutline } from "../../src/write/outline.ts";
 import type { FeatureSubmission, OutlineScenario, OutlineSubmission, Step, WriteOutline, WrittenFeature } from "../../src/write/schema.ts";
+import type { ReviewSubmission } from "../../src/write/review.ts";
 import { checkFeature } from "../../src/write/writer.ts";
+import { ScriptedBackend, type ScriptedTurn } from "./scripted-backend.ts";
 import { returnsBrief } from "./brief.ts";
 import { actor, ev, rule } from "./facts.ts";
 
@@ -128,4 +132,66 @@ export function writtenFixture(aligned = alignedFixture(), outline = outlineFixt
   const result = checkFeature(validFeature(), { aligned, sets: coverageSets(aligned), outline, featureId: "FEAT-1", isLast: false, language: "zh" });
   if (result.issues.length) throw new Error(JSON.stringify(result.issues));
   return new Map([["FEAT-1", result.accepted]]);
+}
+
+/** FEAT-2: SCN-5 specified (AC-1, DEC-6, BR-3), SCN-6 open (OQ-4), SCN-7 specified (NFR-1). "使用者" is for the vocabulary. */
+export function feature2(): FeatureSubmission {
+  return {
+    description: "會員可以申請退貨",
+    background: [],
+    scenarios: [
+      { id: "SCN-5", steps: [step("Given", "使用者的商品到貨第 2 天", ["AC-1"]), step("When", "會員申請退貨", ["FEAT-2"]), step("Then", "系統接受退貨", ["AC-1"])], examples: [] },
+      { id: "SCN-6", steps: [step("Given", "會員有一筆退貨", ["FEAT-2"])], examples: [] },
+      { id: "SCN-7", steps: [step("When", "會員送出退貨申請", ["FEAT-2"]), step("Then", "系統在 2 秒內回應", ["NFR-1"])], examples: [] },
+    ],
+  };
+}
+
+/** A Scenario Review that finds every line stated by what it cites, built from the units in its prompt. */
+export function reviewFrom(prompt: string, flag?: { unit: string; ref: string }): ReviewSubmission {
+  const view = parseYaml(prompt.slice(prompt.indexOf("<review>") + "<review>".length, prompt.indexOf("</review>"))) as {
+    scenarios: { unit: string; lines: { ref: string }[] }[];
+  };
+  return {
+    reviews: view.scenarios.map((u) => ({
+      unit: u.unit,
+      lines: u.lines.map((l) => ({ ref: l.ref, grounding: "stated" as const, contradicts: flag?.unit === u.unit && flag.ref === l.ref, values: [], actualSourceIds: [] })),
+    })),
+  };
+}
+export const approving: ScriptedTurn = { respond: (p) => reviewFrom(p) };
+export const flagging = (unit: string, ref: string): ScriptedTurn => ({ respond: (p) => reviewFrom(p, { unit, ref }) });
+export const vocabularyCall: ScriptedTurn = {
+  call: { entries: [{ canonical: "會員", definition: "在平台註冊的購買者", avoid: ["使用者"], sourceIds: ["ACT-1"] }], replacements: [{ loc: "SCN-5/step/0", from: "使用者", to: "會員" }] },
+};
+
+export interface WriteScripts {
+  outline?: ScriptedTurn[];
+  /** Writer sessions in the order they start. */
+  writers?: ScriptedTurn[][];
+  /** Review sessions in the order they start. */
+  reviews?: ScriptedTurn[][];
+  vocabulary?: ScriptedTurn[];
+}
+
+export function writeBackend(s: WriteScripts = {}): ScriptedBackend & { tools: string[] } {
+  const tools: string[] = [];
+  const queue = { writers: [...(s.writers ?? [[{ call: validFeature() }], [{ call: feature2() }]])], reviews: [...(s.reviews ?? [])] };
+  const b = new ScriptedBackend((options: SessionOptions) => {
+    tools.push(options.tool.name);
+    switch (options.tool.name) {
+      case "submit_outline":
+        return s.outline ?? [{ call: validOutline() }];
+      case "submit_feature":
+        return queue.writers.shift() ?? [];
+      case "submit_review":
+        return queue.reviews.shift() ?? [approving];
+      case "submit_vocabulary":
+        return s.vocabulary ?? [vocabularyCall];
+      default:
+        return [];
+    }
+  }) as ScriptedBackend & { tools: string[] };
+  b.tools = tools;
+  return b;
 }

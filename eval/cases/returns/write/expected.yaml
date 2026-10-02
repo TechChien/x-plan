@@ -1,0 +1,37 @@
+description: >
+  電商退貨與取消（Write）。aligned.json 是手寫的暫定 fixture：returns 的 Brief 加上 clarify/answers.yaml 預期產生的
+  Decision，之後換成真實 Clarify Run 經人工審過的版本。量測：每條規則與 Decision 是否都寫成情境、被推翻的 3 天與
+  被更正的「運費一律由平台吸收」不出現、取消期限的邊界是否推導出來、延後與未決的題目是否以骨架呈現，以及用語統一。
+
+mustHaveScenarios:
+  # 原文與 Decision 明說的
+  - { id: cancel-within-7, all: ["7"], sourceIds: [DEC-1, BR-2] }
+  - { id: vip-within-14, all: ["VIP", "14"], sourceIds: [DEC-2] }
+  - { id: refund-original-method, all: ["原付款方式"], sourceIds: [AC-1] }
+  - { id: shipped-no-cancel, all: ["出貨"], sourceIds: [DEC-3] }
+  - { id: return-review, all: ["客服", "審核"], sourceIds: [BR-3] }
+  - { id: appraisal-period, all: ["7"], sourceIds: [DEC-5, BR-4] }
+  - { id: defect-fee, all: ["瑕疵", "平台"], sourceIds: [DEC-4, DEC-10] }
+  - { id: personal-fee, all: ["會員"], sourceIds: [DEC-4, DEC-10] }
+  - { id: return-refund-10-days, all: ["10"], sourceIds: [DEC-7] }
+  - { id: return-number, all: ["編號"], sourceIds: [DEC-8] }
+  # 由規則必然推得的邊界
+  - { id: cancel-day-8-refused, all: ["8"], derived: true }
+  - { id: vip-day-15-refused, all: ["15"], derived: true }
+
+shouldNotAppear:
+  # 關鍵字是子字串比對：「13 天」也會命中「3 天」，命中時先看是不是這種情況。
+  - { id: old-cancel-window, any: ["3 天", "3天"], reason: "BR-1 已被 DEC-1 推翻" }
+  - { id: revised-fee, any: ["一律由平台"], reason: "DEC-9 已被 DEC-10 更正" }
+
+expectedOpen: [FQ-4, FQ-5]
+
+vocabulary:
+  - canonical: 會員
+    variants: [使用者, 用戶, 顧客, 消費者, 買家]
+  - canonical: 客服人員
+    variants: [客服專員, 審核人員]
+
+distinct:
+  - [會員, 客服人員]
+  - [會員, 平台]

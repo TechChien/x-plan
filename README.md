@@ -302,6 +302,23 @@ XPLAN_API_KEY=... pnpm eval --stage clarify [--cases returns] [--repeat 5]
 
 報告的指標：解讀正確率、錯誤推翻數、追問召回與多餘追問、gap 召回、雜訊題數、建議答案命中率、自行作答攔截數（agent 試圖在沒有回答時做出 Decision 而被退回的次數）、Review 攔下數（Grounding Review 依多加內容／只答一部分／答非所問／推翻範圍過大退回的 Decision 數）、衝突處理率與多餘衝突題數、Round 數與結束原因、交卷次數、prefix cache 命中率、token 用量。每次執行的 run 目錄另有 `eval-answers.json`，記錄每一題是由哪個標註回答的。
 
+### Write eval
+
+```sh
+XPLAN_API_KEY=... pnpm eval --stage write [--cases returns] [--repeat 5]
+```
+
+只跑有 `write/` 子目錄的案例。Write 的輸入是一份固定的 `write/aligned.json`，不先跑 Extract 與 Clarify，所以分數不受前面 Stage 的變異影響。returns 的 `aligned.json` 目前是手寫的暫定版本（returns 的 Brief 加上 `clarify/answers.yaml` 預期產生的 Decision），之後換成真實 Clarify Run 經人工審過的版本。標註寫在 `write/expected.yaml`（範例見 [eval/cases/returns/write/expected.yaml](eval/cases/returns/write/expected.yaml)）：
+
+- `mustHaveScenarios`：文件必須有的情境。某個寫出的情境包含全部關鍵字，而且（有給 `sourceIds` 時）引用其中任一 id，就算命中；`derived: true` 只看推導出的內容（`@derived` 的情境或 Examples），用來量測邊界有沒有被推導出來。
+- `shouldNotAppear`：不該出現在任何情境的說法，通常是被推翻或被更正的值。關鍵字是子字串比對，「13 天」也會命中「3 天」。
+- `expectedOpen`：應該以 `@open` 或 `@deferred` 情境呈現的題目。
+- `vocabulary`：用語統一應該換掉的說法（`variants`）與標準用語；`distinct` 列出不同概念的詞，被替換成彼此就算錯誤合併。
+
+報告的指標：必要情境召回率、被推翻內容出現數、未決呈現率、outline 被退回的次數、Review 依判定分類的攔下數、`@unverified` / `@unwritten` / 未覆蓋數、情境數與 `@derived` 比例、notBehavioral 數、新 Feature 數、只引用 FEAT 的情境數（Clarify 該問而沒問的 gherkin-gap）、writer 降為 open 的數量、變體說法在用語統一前後的出現次數、錯誤合併數、替換與跳過數、詞條數、`.feature` 解析失敗數、交卷次數、writer 的 prefix cache 命中率、token 用量。必要情境召回與被推翻內容另外以 writer 的原文（用語統一前）各算一次，兩者有差距時，代表用語統一改壞了意思（[ADR 0019](docs/adr/0019-vocabulary-normalization.md)）。
+
+要比較有沒有用語統一，把 config 的 `stages.write.vocabulary.enabled` 設為 `false` 再跑一次。
+
 ## 開發
 
 ```sh

@@ -372,7 +372,7 @@ writer 的並行數沿用 `concurrency`。輸出語言繼承自上游；用 `--l
 
 用法為 `pnpm eval --stage write [--cases …] [--repeat N]`，只跑有 `write/` 子目錄的案例。
 
-- **輸入**：每個案例放一份固定、經人工審過的 `write/aligned.json`，不串接前面的 Stage。第一個案例用 returns，以現有的 Clarify fixture 與 `answers.yaml` 跑一次 Clarify，人工審過後存成 fixture。
+- **輸入**：每個案例放一份固定、經人工審過的 `write/aligned.json`，不串接前面的 Stage。第一個案例用 returns。目前的 `aligned.json` 是手寫的暫定版本：returns 的 Brief 加上 `clarify/answers.yaml` 預期產生的 Decision（含一條被更正的 Decision、一個延後與一個未決的 gherkin-gap）；之後以現有的 Clarify fixture 與 `answers.yaml` 跑一次真實的 Clarify，人工審過後替換，並調整 `expected.yaml` 的關鍵字。
 - **標註** `write/expected.yaml`：
 
 ```yaml
@@ -398,7 +398,7 @@ distinct:
 | 未決呈現率 | `expectedOpen` 以 `@open`、`@deferred` 呈現的比例 |
 | 覆蓋退回數 | outline 因 §1.5 規則 3、4、5 被退回的次數 |
 | Review 攔下數 | 依判定分類的次數；`@unverified` 數 |
-| 結構 | `@derived` 比例、`notBehavioral` 數、FEAT-N 數、只引用 FEAT 本身的 Scenario 數（Clarify gherkin-gap 召回的反向指標）、writer 因 outline 缺漏而降為 `open` 的數量 |
+| 結構 | `@derived` 比例、`notBehavioral` 數、FEAT-N 數、只引用 FEAT 本身的 specified / derived Scenario 數（Clarify gherkin-gap 召回的反向指標；open / deferred 的骨架本來就只引用 FEAT，不計）、writer 因 outline 缺漏而降為 `open` 的數量 |
 | 用語一致性 | `variants` 在 steps 中出現的次數，統一前（writer 原始文字）與統一後各算一次 |
 | 錯誤合併 | `distinct` 中的詞被替換成彼此的次數 |
 | 意思偏移 | 統一前後的必要情境召回率、被推翻內容出現數的差異 |

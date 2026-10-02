@@ -1,10 +1,11 @@
 /**
  * Live eval of a stage against the configured model.
  *
- *   XPLAN_API_KEY=... pnpm eval [--stage extract|clarify] [--cases returns glossary-split] [--repeat 3] [--config path]
+ *   XPLAN_API_KEY=... pnpm eval [--stage extract|clarify|write] [--cases returns glossary-split] [--repeat 3] [--config path]
  *
  * Writes eval/results/<timestamp>/report.md (+ report.json and every run directory). Clarify runs the cases that
- * have a clarify/ directory, starting from its fixed brief.json.
+ * have a clarify/ directory, starting from its fixed brief.json; Write the cases with write/expected.yaml, starting from
+ * the fixed write/aligned.json.
  */
 import { existsSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -12,6 +13,7 @@ import { PiBackend } from "../src/agent/pi-backend.ts";
 import { loadConfig } from "../src/config.ts";
 import { renderClarifyReport, runClarifyEval } from "../src/eval/clarify/run.ts";
 import { renderReport, runEval } from "../src/eval/run-eval.ts";
+import { renderWriteReport, runWriteEval } from "../src/eval/write/run.ts";
 
 const CASES_DIR = join(import.meta.dirname, "..", "eval", "cases");
 
@@ -38,11 +40,18 @@ if (stage === "clarify") {
   const results = await runClarifyEval({ ...common, cases });
   writeFileSync(join(outDir, "report.json"), `${JSON.stringify(results, null, 2)}\n`);
   writeFileSync(join(outDir, "report.md"), renderClarifyReport(results));
+} else if (stage === "write") {
+  const cases = names.filter((name) => existsSync(join(CASES_DIR, name, "write", "expected.yaml"))).map((name) => ({ name, dir: join(CASES_DIR, name) }));
+  if (!cases.length) throw new Error("No case has write/expected.yaml");
+  const results = await runWriteEval({ ...common, cases });
+  writeFileSync(join(outDir, "report.json"), `${JSON.stringify(results, null, 2)}
+`);
+  writeFileSync(join(outDir, "report.md"), renderWriteReport(results));
 } else if (stage === "extract") {
   const results = await runEval({ ...common, cases: names.map((name) => ({ name, dir: join(CASES_DIR, name) })) });
   writeFileSync(join(outDir, "report.json"), `${JSON.stringify(results, null, 2)}\n`);
   writeFileSync(join(outDir, "report.md"), renderReport(results));
 } else {
-  throw new Error(`Unknown --stage ${stage}; use extract or clarify`);
+  throw new Error(`Unknown --stage ${stage}; use extract, clarify or write`);
 }
 console.error(`\nReport: ${join(outDir, "report.md")}`);
