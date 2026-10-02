@@ -37,12 +37,18 @@ applyReplacements → render .feature / 03-spec.md / 03-trace.json   # 渲染後
 
 ```
 superseded    = supersededBy 的 key
+cancelled     = featureIds 全部被推翻的 BR、featureId 被推翻的 AC（隨 Feature 一起取消）
 activeDec     = status 為 active 的 Decision
 features      = Brief 的 FEAT − superseded
-mustCover     = features ∪ AC ∪ BR ∪ { d ∈ activeDec | d.effect ≠ confirm }  − superseded
-forbidden     = superseded ∪ 未被 confirm 的 ASM ∪ 非 active 的 DEC
-notBehavioralAllowed = { d ∈ activeDec | d.effect = new }
+mustCover     = features ∪ AC ∪ BR ∪ { d ∈ activeDec | d.effect ≠ confirm }  − superseded − cancelled
+forbidden     = superseded ∪ cancelled ∪ 未被 confirm 的 ASM ∪ 非 active 的 DEC
+citable       = Brief 的事實 ∪ ASM ∪ activeDec  − forbidden          （OQ、CTR 等題目不能當 sourceIds，只能放在 agendaIds）
+notBehavioralAllowed = { d ∈ activeDec | d.effect = new，或 d.effect = replace 且只推翻 FEAT、BR、AC、ASM 以外的條目 }
 ```
+
+- **隨 Feature 取消**：使用者取消整個 Feature 時，只屬於它的 BR 與 AC 也一起取消，不再要求覆蓋，也不得引用；同時屬於其他 Feature 的 BR 保留。
+- **notBehavioralAllowed 包含推翻非行為條目的 replace**：例如推翻 TERM 定義的 Decision，effect 是 `replace`，但沒有行為可寫。推翻 FEAT、BR、AC、ASM 的 replace，以及調和矛盾的 `reconcile`，一律不能標。
+- forbidden 的每個條目都記錄原因（被哪條 Decision 推翻、隨哪個 Feature 取消、未確認的 Assumption、被哪條 Decision 更正），退回訊息據此告訴 agent 應改引用什麼。
 
 - 被 confirm 的 ASM 可以當成一般事實引用；DEC 的 effect 為 `confirm` 時，引用它或它確認的 ASM 都可以，不強制。
 - 被推翻的 FEAT 不產生 `.feature`，列在 `03-spec.md` 的「已取消的 Feature」，附上推翻它的 Decision 與使用者原話。
@@ -102,8 +108,7 @@ Scenario = {
   "background": [Step],                   // 可省略
   "scenarios": [{
     "id": "SCN-3",                        // 必須剛好是本 Feature 在 outline 中的 SCN
-    "kind": "open",                       // 可省略；只能從 specified / derived 降為 open
-    "openReason": "…",                    // 降為 open 時必填
+    "openReason": "…",                    // 可省略；填了就表示從 specified / derived 降為 open
     "steps": [Step],
     "examples": [{                        // 有 Examples 即為 Scenario Outline
       "name": "需求明定",
@@ -129,7 +134,7 @@ Step = { "keyword": "Given" | "When" | "Then" | "And" | "But", "text": "…", "s
 2. **允許清單**：每個 step、每個 Examples 列的 sourceIds 只能是該 Scenario 在 outline 中的有效 sourceIds，加上 `<context>` 中的條目與本 Feature 的 FEAT。forbidden 的條目不會出現在 writer 的輸入中，這條規則同時涵蓋了禁止引用。
 3. Scenario Outline：每個 header 欄位都要出現在 steps 的 `<欄位>` 中；每列的格數等於欄數。`kind` 為 `derived` 的 Scenario，所有 Examples 區塊都必須是 `derived`。
 4. **數值出處**：不是 `derived` 的內容中，steps 與 Examples 的阿拉伯數字（先把全形數字與一到九十九的中文數字正規化）必須出現在它引用的條目文字中（事實的欄位與 Evidence 引文、Decision 的結論與使用者原話）。`<…>` 佔位內的文字不檢查。
-5. `kind` 只能由 `specified`、`derived` 降為 `open`，且要附 `openReason`。
+5. `openReason` 只能填在 outline 中為 `specified`、`derived` 的 Scenario 上。
 6. 語言檢查（ADR 0005）：描述、step、Examples 名稱與 cells。Term、Actor、Entity 的原名、`<…>` 佔位內容與引號中的原文值不檢查。
 
 最後一次交卷時部分接受：違反規則 2 的 Scenario 移入 `03-rejected.json`；違反規則 4 的照常收下並標 `@unverified`；語言不符的照常收下並寫入警告。

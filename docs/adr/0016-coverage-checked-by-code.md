@@ -5,17 +5,19 @@
 程式從 Aligned Brief 算出三個集合：
 
 ```
-mustCover = 沒被推翻的 FEAT ∪ AC ∪ BR ∪ effect 不是 confirm 的 active Decision  − supersededBy 的 key
-forbidden = supersededBy 的 key ∪ 未被確認的 ASM ∪ 非 active 的 Decision
-notBehavioralAllowed = effect 為 new 的 active Decision
+mustCover = 沒被推翻的 FEAT ∪ AC ∪ BR ∪ effect 不是 confirm 的 active Decision  − supersededBy 的 key − 隨 Feature 取消的 BR、AC
+forbidden = supersededBy 的 key ∪ 隨 Feature 取消的 BR、AC ∪ 未被確認的 ASM ∪ 非 active 的 Decision
+notBehavioralAllowed = effect 為 new 的 active Decision，以及只推翻 FEAT、BR、AC、ASM 以外條目（例如 Term）的 replace
 ```
+
+使用者取消整個 Feature 時，只屬於它的 BR（`featureIds` 全部被推翻）與 AC 隨之取消；同時屬於其他 Feature 的 BR 保留。
 
 outline 交卷時檢查：
 
 1. **覆蓋**：mustCover 中的每個 id，都要被某個 Scenario 引用，或列在 `notBehavioral` 並附上理由。FEAT 以「有一個至少含一個 Scenario 的區塊」算作覆蓋。
 2. **禁止引用**：任何 sourceIds 都不得在 forbidden 中。退回訊息指出被推翻的條目應改引用哪條 Decision。
 3. **AC 不能被降級**：每條 AC 至少被一個不是 `@derived` 的 Scenario 引用。AC 是原文親口給的例子，不能被模型推導出來的版本取代。
-4. **逃生口有限**：`notBehavioral` 只能用在 notBehavioralAllowed 的 Decision 上，例如只是名詞定義的 Decision。BR、AC、FEAT 依定義就是行為，一律不能標。
+4. **逃生口有限**：`notBehavioral` 只能用在 notBehavioralAllowed 的 Decision 上，例如只是名詞定義的 Decision，或推翻 Term 定義的 Decision。BR、AC、FEAT 依定義就是行為，一律不能標；推翻它們的 Decision、調和矛盾的 Decision 也不能標。
 
 outline 階段 steps 還不存在，所以 writer 交卷時另外檢查每個 step 與 Examples 列的 sourceIds：只能引用該 Scenario 在 outline 中的 sourceIds，以及 writer 輸入中共用的 Actor、Term、Domain Entity 等條目（ADR 0015）。forbidden 的條目不會出現在 writer 的輸入中，這個允許清單同時涵蓋了規則 2。
 
