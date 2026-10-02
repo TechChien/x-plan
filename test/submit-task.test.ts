@@ -55,6 +55,15 @@ describe("runSubmitTask", () => {
     expect(outcome).toMatchObject({ status: "accepted", metrics: { submitAttempts: 2, schemaFailures: 1, checkFailures: 0 } });
   });
 
+  test("an array with a default may be left out, and check receives it filled in", async () => {
+    const withList = Type.Object({ answer: Type.Integer(), notes: Type.Array(Type.String(), { default: [] }), tags: Type.Array(Type.String()) });
+    const seen: unknown[] = [];
+    const t = { ...task(), tool: { ...task().tool, parameters: withList, check: (p: unknown) => (seen.push(p), { accept: 42 }) } } as SubmitTask<{ answer: number }, number>;
+    const { outcome } = await run([{ call: { answer: 42 } }, { call: { answer: 42, tags: [] } }], t);
+    expect(outcome).toMatchObject({ status: "accepted", metrics: { submitAttempts: 2, schemaFailures: 1 } });
+    expect(seen).toEqual([{ answer: 42, notes: [], tags: [] }]);
+  });
+
   test("L3: check errors are fed back and retried", async () => {
     const { outcome, events } = await run([{ call: { answer: 1 } }, { call: { answer: 42 } }]);
     expect(outcome).toMatchObject({ status: "accepted", value: 42, metrics: { submitAttempts: 2, checkFailures: 1 } });

@@ -21,9 +21,10 @@ export const DecisionOpSchema = Type.Object({
   answerRef: Str("The Answer this conclusion is drawn from, exactly as in <pending-answers>, e.g. R1/CTR-1"),
   resolves: Type.Array(Type.String(), { minItems: 1, description: "Agenda Item ids this Decision closes" }),
   conclusion: Str("What the user decided, as one self-contained statement"),
-  supersedes: Ids("Brief fact or ASM ids this Decision replaces"),
+  // `default: []`: the model may leave it out (see `omittable`); past runs show it is then always empty.
+  supersedes: Type.Array(Type.String(), { description: "Brief fact or ASM ids this Decision replaces", default: [] }),
   confirms: Ids("ASM ids this Decision confirms as stated"),
-  revises: Ids("DEC ids this Decision corrects"),
+  revises: Type.Array(Type.String(), { description: "DEC ids this Decision corrects", default: [] }),
   relatedIds: Ids("Other Brief ids the conclusion concerns"),
 });
 export type DecisionOp = Static<typeof DecisionOpSchema>;

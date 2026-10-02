@@ -1,4 +1,5 @@
 import type { TSchema } from "typebox";
+import { Value } from "typebox/value";
 import type { ThinkingLevel } from "../config.ts";
 import type { AgentBackend, AgentEvent, TokenUsage } from "./types.ts";
 
@@ -49,6 +50,23 @@ export interface TaskObserver {
   onRawEvent(event: unknown): void;
   /** Wraps the `check` of a submit call, e.g. to run it inside the tool call's span. */
   withinTool?<T>(fn: () => Promise<T>): Promise<T>;
+}
+
+/**
+ * The schema the model sees: a property with a `default`, such as an array that is usually empty, may be left out.
+ * Models often omit an empty array, and refusing that wastes a submit attempt; `runSubmitTask` fills the default in
+ * before `check`, so the check still receives the full shape.
+ */
+export function omittable(schema: TSchema): TSchema {
+  const visit = (node: unknown): unknown => {
+    if (Array.isArray(node)) return node.map(visit);
+    if (!node || typeof node !== "object") return node;
+    const out = Object.fromEntries(Object.entries(node).map(([k, v]) => [k, visit(v)])) as Record<string, unknown>;
+    const props = out.properties as Record<string, Record<string, unknown>> | undefined;
+    if (props && Array.isArray(out.required)) out.required = out.required.filter((key: string) => !("default" in (props[key] ?? {})));
+    return out;
+  };
+  return visit(schema) as TSchema;
 }
 
 /**
@@ -116,12 +134,12 @@ export async function runSubmitTask<P, R>(backend: AgentBackend, task: SubmitTas
       tool: {
         name: task.tool.name,
         description: task.tool.description,
-        parameters: task.tool.parameters,
+        parameters: omittable(task.tool.parameters),
         execute: async (params) => {
           executedThisAttempt = true;
           if (accepted) return { text: "Already accepted. Stop now.", terminate: true, isError: false };
           const check = async () =>
-            task.tool.check(params as P, {
+            task.tool.check(Value.Default(task.tool.parameters, structuredClone(params)) as P, {
               attempt: metrics.submitAttempts,
               isLast: metrics.submitAttempts >= task.maxSubmitAttempts,
             });

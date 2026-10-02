@@ -138,7 +138,8 @@ export const WrittenScenarioSchema = Type.Object(
     id: Str("SCN id from <feature>"),
     openReason: Type.Optional(Str("Only when the scenario cannot be written from <sources>: why; it becomes open")),
     steps: Type.Array(StepSchema),
-    examples: Type.Array(ExamplesSchema, { description: "Non-empty makes this a Scenario Outline" }),
+    // `default: []`: the model may leave it out (see `omittable`); past runs show it is then always empty.
+    examples: Type.Array(ExamplesSchema, { description: "Non-empty makes this a Scenario Outline", default: [] }),
   },
   { additionalProperties: false },
 );

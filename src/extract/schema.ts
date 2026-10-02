@@ -47,7 +47,8 @@ export const FACT_SECTIONS = {
       id: Id("BR"),
       rule: Type.String(),
       featureIds: StrList("FEAT ids this rule applies to"),
-      conditions: StrList("Conditions under which the rule applies"),
+      // `default: []`: the model may leave it out (see `omittable`); past runs show it is then always empty.
+      conditions: Type.Array(Type.String(), { description: "Conditions under which the rule applies", default: [] }),
       evidence: EvidenceList,
     }),
   },
@@ -86,7 +87,8 @@ export const FACT_SECTIONS = {
       name: Type.String(),
       description: Type.String(),
       attributes: StrList("Attributes or states of the entity"),
-      relationships: Type.Array(Type.Object({ targetId: Str("ENT id"), kind: Str("e.g. has-many, belongs-to") })),
+      // `default: []`: the model may leave it out (see `omittable`); past runs show it is then always empty.
+      relationships: Type.Array(Type.Object({ targetId: Str("ENT id"), kind: Str("e.g. has-many, belongs-to") }), { default: [] }),
       evidence: EvidenceList,
     }),
   },
@@ -96,7 +98,8 @@ export const FACT_SECTIONS = {
       id: Id("TERM"),
       term: Type.String(),
       definition: Type.String(),
-      aliases: StrList("Other names used for the same term"),
+      // `default: []`: the model may leave it out (see `omittable`); past runs show it is then always empty.
+      aliases: Type.Array(Type.String(), { description: "Other names used for the same term", default: [] }),
       evidence: EvidenceList,
     }),
   },

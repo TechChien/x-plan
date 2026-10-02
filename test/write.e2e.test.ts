@@ -76,6 +76,16 @@ describe("runWrite", () => {
     }
   });
 
+  test("a writer may leave out empty examples", async () => {
+    const d = dirs();
+    const feature = validFeature();
+    const omitted = { ...feature, scenarios: feature.scenarios.map(({ examples, ...s }) => (examples.length ? { ...s, examples } : s)) };
+    const report = await runWrite(options(d, backend({ writers: [[{ call: omitted }], [{ call: feature2() }]] })));
+    expect(report.status).toBe("succeeded");
+    const writer = readJson<{ agents: { label: string; metrics: { submitAttempts: number } }[] }>(join(d.write, "run.json")).agents.find((a) => a.label === "write-FEAT-1")!;
+    expect(writer.metrics.submitAttempts).toBe(1);
+  });
+
   test("Feedback reads the scenarios the stage wrote", async () => {
     const d = dirs();
     await runWrite(options(d, backend()));
