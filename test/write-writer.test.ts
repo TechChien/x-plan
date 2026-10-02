@@ -155,6 +155,12 @@ describe("checkFeature", () => {
       expect(messages(result)).toEqual(["scenarios[0].examples[0].rows[0]: 3 is not given by DEC-1; cite the item that gives it, or write <…> for a value no item gives"]);
     });
 
+    test("a number only an Evidence quote gives does not count: the quote may carry what the user replaced", () => {
+      // FEAT-1 is quoted from "會員可於下單後 3 天內取消訂單。", the sentence of the replaced 3-day rule.
+      const result = check(edit((f) => (f.scenarios[0]!.steps[1]!.text = "會員在下單後 3 天內取消訂單")));
+      expect(messages(result)).toEqual(["scenarios[0].steps[1]: 3 is not given by FEAT-1; cite the item that gives it, or write <…> for a value no item gives"]);
+    });
+
     test("derived content and placeholders are not checked", () => {
       expect(messages(check(edit((f) => (f.scenarios[1]!.steps[0]!.text = "一般會員下單已 <天數> 天，金額 <超過 1000 元>"))))).toEqual([]);
     });

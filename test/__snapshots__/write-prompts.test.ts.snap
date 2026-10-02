@@ -276,8 +276,6 @@ sources:
   - id: FEAT-1
     name: 取消訂單
     description: 取消訂單
-    evidence:
-      - 會員可於下單後 3 天內取消訂單。
   - id: DEC-1
     conclusion: 一般會員 7 天內可取消
     answer: 回答 DEC-1
@@ -458,8 +456,6 @@ names:
   - id: ACT-1
     name: 會員
     description: 會員
-    evidence:
-      - 會員可以下單。
   - id: DEC-6
     conclusion: 鑑賞期是到貨後 7 天
     answer: 回答 DEC-6
@@ -515,20 +511,14 @@ scenarios:
 - id: FEAT-1
   name: 取消訂單
   description: 取消訂單
-  evidence:
-    - 會員可於下單後 3 天內取消訂單。
 - id: BR-2
   rule: 下單後 7 天內可取消
   featureIds:
     - FEAT-1
-  evidence:
-    - 7 天內都可以取消喔。
 - id: AC-2
   featureId: FEAT-1
   kind: scenario
   text: 下單當天取消成功
-  evidence:
-    - 下單當天可取消。
 - id: DEC-1
   conclusion: 一般會員 7 天內可取消
   answer: 回答 DEC-1

@@ -9,7 +9,7 @@ Write 分兩段。第一段由單一的 Outline agent 讀取整份 Aligned Brief
 - Scenario 的集合、標題、種類由 outline 決定，writer 不能新增、刪除或改標題，只能把某個 Scenario 從 `specified`、`derived` 降為 `open` 並附理由（寫不出來時不硬寫）。
 - outline 可以新增 Brief 裡沒有的 Feature，但 `sourceIds` 必須含一條 effect 為 `new` 的 active Decision，id 由程式編為 `FEAT-N1`、`FEAT-N2`。這讓 Clarify 問出的新能力不必硬塞進不相干的 Feature，又保證每個新 Feature 都追溯到使用者的原話（ADR 0007）。
 - 被推翻的 FEAT 不產生 `.feature`，列在 `03-spec.md` 的「已取消的 Feature」。
-- writer 看不到整份 Aligned Brief。它的輸入由程式從 outline 展開：本 Feature 的 outline 片段，加上依片段中的 sourceIds 查出的條目內容；另外有一段所有 writer 共用的 `<context>`（Actor、Term、Domain Entity 的原名與定義），可以共用 prefix cache。被推翻的條目不會出現在 writer 眼前，writer 也無法從沒引用的條目搬內容。step 的 sourceIds 只能引用該 Scenario 的 sourceIds 與 `<context>` 中的條目；需要 outline 沒給的條目時，writer 把 Scenario 降為 `open`，不自行補上。
+- writer 看不到整份 Aligned Brief。它的輸入由程式從 outline 展開：本 Feature 的 outline 片段，加上依片段中的 sourceIds 查出的條目內容；另外有一段所有 writer 共用的 `<context>`（Actor、Term、Domain Entity 的原名與定義），可以共用 prefix cache。被推翻的條目不會出現在 writer 眼前，writer 也無法從沒引用的條目搬內容。條目也不附 Evidence 引文：引文可能帶著被推翻的內容（Feature 的證據常常就是寫著舊規則的那一句），writer 照引文寫出舊值時，數值檢查與 Scenario Review 都會因為「引用的條目有說」而放行。step 的 sourceIds 只能引用該 Scenario 的 sourceIds 與 `<context>` 中的條目；需要 outline 沒給的條目時，writer 把 Scenario 降為 `open`，不自行補上。
 - Write 不與使用者互動。寫的時候發現的缺口寫成 `@open` 的 Scenario 骨架，要補就回 Clarify。上游 Clarify 因 `/done` 或達到 Round 上限而結束時照常執行，未決題目本來就是 Write 的正常輸入（ADR 0008），只印出警告。
 - outline 失敗時整個 Run 失敗；某個 Feature 的 writer 失敗時，其他 Feature 照常寫出，失敗的 Feature 標 `@unwritten`，可以用 `x-plan write <write-run> --only FEAT-3` 在同一個 Run 中補寫，沿用原本的 outline 與 SCN id。
 

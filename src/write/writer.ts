@@ -204,10 +204,13 @@ function checkScenario(
   return out;
 }
 
-/** Keys that hold ids or file names: their digits are not values a step could state. */
-const ID_KEYS = new Set(["id", "featureId", "featureIds", "actorIds", "dependsOn", "relatedIds", "targetId", "file"]);
+/**
+ * Keys left out when reading an item's numbers: ids, whose digits are not values a step could state, and Evidence,
+ * whose quotes may carry what the user replaced (see `sourcesView`). The writer never sees quotes either.
+ */
+const ID_KEYS = new Set(["id", "featureId", "featureIds", "actorIds", "dependsOn", "relatedIds", "targetId", "file", "evidence"]);
 
-/** What each citable item says, for finding the numbers it gives: every fact field and quote, a Decision's conclusion and Answer. */
+/** What each citable item says, for finding the numbers it gives: every fact field, a Decision's conclusion and Answer. */
 function itemTexts(aligned: AlignedBrief): Map<string, string> {
   const texts = new Map<string, string>();
   const walk = (value: unknown, out: string[]) => {

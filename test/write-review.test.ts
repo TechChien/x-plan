@@ -45,7 +45,7 @@ describe("reviewToYaml", () => {
     ]);
     expect(view.sources.map((s: { id: string }) => s.id)).toEqual(["FEAT-1", "DEC-5"]);
     expect(view.sources[1]).toEqual({ id: "DEC-5", conclusion: "VIP 10 天內可取消", answer: "回答 DEC-5" });
-    expect(view.sources[0]).toMatchObject({ id: "FEAT-1", name: "取消訂單", evidence: ["會員可於下單後 3 天內取消訂單。"] });
+    expect(view.sources[0]).toEqual({ id: "FEAT-1", name: "取消訂單", description: "取消訂單" });
   });
 });
 

@@ -136,7 +136,7 @@ Step = { "keyword": "Given" | "When" | "Then" | "And" | "But", "text": "…", "s
 1. `scenarios` 的 id 集合剛好等於本 Feature 在 outline 中的 SCN。
 2. **允許清單**：每個 step、每個 Examples 列的 sourceIds 只能是該 Scenario 在 outline 中的有效 sourceIds，加上 `<context>` 中的條目與本 Feature 的 FEAT。forbidden 的條目不會出現在 writer 的輸入中，這條規則同時涵蓋了禁止引用。
 3. Scenario Outline：每個 header 欄位都要出現在 steps 的 `<欄位>` 中；每列的格數等於欄數。`kind` 為 `derived` 的 Scenario，所有 Examples 區塊都必須是 `derived`。
-4. **數值出處**：不是 `derived` 的內容中，steps 與 Examples 的阿拉伯數字（先把全形數字與一到九十九的中文數字正規化）必須出現在它引用的條目文字中（事實的欄位與 Evidence 引文、Decision 的結論與使用者原話）。`<…>` 佔位內的文字不檢查。
+4. **數值出處**：不是 `derived` 的內容中，steps 與 Examples 的阿拉伯數字（先把全形數字與一到九十九的中文數字正規化）必須出現在它引用的條目文字中（事實的欄位、Decision 的結論與使用者原話；不含 Evidence 引文，理由見 §2）。`<…>` 佔位內的文字不檢查。
 5. `openReason` 只能填在 outline 中為 `specified`、`derived` 的 Scenario 上。
 6. **Then**：`specified`、`derived` 的 Scenario 至少要有一個 Then；`open`、`deferred`（包括 writer 降級的）不得有 Then，最後一行由程式產生。
 7. 語言檢查（ADR 0005）：描述、Background、step、Examples 名稱與 cells。Term、Actor、Entity、Dependency 的原名、`<…>` 佔位內容與引號（「」、『』、""、“”）中的原文值先移除再檢查。
@@ -294,13 +294,15 @@ Feature: 會員申請退貨
 ─────────────── 以上是所有 writer 共用的前綴 ───────────────
 <vocabulary>   只有 --only 補寫時才有
 <feature>      本 Feature 的描述，以及 outline 中本 Feature 的片段（Rule 標題、SCN、種類），原封不動
-<sources>      每個 SCN 引用的條目內容，由程式依 outline 的 sourceIds 查出：事實附 Evidence 引文，
+<sources>      每個 SCN 引用的條目內容，由程式依 outline 的 sourceIds 查出：事實的欄位（不附 Evidence 引文），
                Decision 附結論與使用者原話，open / deferred 附題目原文
 ```
 
 只給 writer 它需要的材料有三個理由：被推翻的條目不會出現在眼前；writer 不會從沒引用的條目搬內容；writer 看到的材料與 Scenario Review 看到的一致，review 的判定依據不會和 writer 不同。
 
-**Review 的 user message**：本 Feature 的每個 Scenario（渲染後的文字加上 step 與列的編號），以及它引用的條目全文。
+**writer 與 reviewer 看不到 Evidence 引文**，數值檢查也不讀引文。引文可能帶著已被推翻的內容：Feature 的證據常常就是寫著規則的那一句，例如 FEAT「取消訂單」引自「會員可於下單後 3 天內取消訂單」，而 3 天的規則已被 Decision 推翻。writer 照引文寫出 3 天並引用 FEAT 時，數值檢查與 Scenario Review 都會因為 FEAT「有說」而放行。結構化欄位已經是 Extract 整理過的內容，引文的作用是證明出處，這在 Extract 階段已經驗證過。outline 與 Vocabulary Normalization 仍然看得到引文。
+
+**Review 的 user message**：本 Feature 的每個 Scenario（渲染後的文字加上 step 與列的編號），以及它引用的條目全文（不附 Evidence 引文）。
 
 **Vocabulary 的 user message**：Brief 的 Term、Actor、Domain Entity（含 aliases）；active Decision 的結論與使用者原話；全部 Gherkin 文字，每段標上 `loc`。
 
