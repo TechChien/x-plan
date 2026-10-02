@@ -34,7 +34,7 @@ export interface ClarifyScore {
   /** Submissions refused for deciding without an Answer (rules 2 and 3). */
   selfAnswerBlocked: number;
   /** Decisions Grounding Review sent back, by verdict, over every attempt (one Decision can count under several). */
-  review: { embellished: number; partial: number; offTopic: number };
+  review: { embellished: number; partial: number; offTopic: number; overreach: number };
   rounds: number;
   questionsAsked: number;
   termination?: string;
@@ -120,7 +120,7 @@ export function scoreClarify(labels: ClarifyCase, brief: RequirementBrief, state
 function countReviews(state: ClarifyState): ClarifyScore["review"] {
   const records = state.rounds.flatMap((r) => r.reviews ?? []);
   const count = (v: string) => records.filter((r) => r.verdicts.some((x) => x === v)).length;
-  return { embellished: count("embellished"), partial: count("partial"), offTopic: count("off-topic") };
+  return { embellished: count("embellished"), partial: count("partial"), offTopic: count("off-topic"), overreach: count("overreach") };
 }
 
 function scoreConflicts(labels: ClarifyCase, state: ClarifyState, log: AnswerLogEntry[]): ClarifyScore["conflicts"] {

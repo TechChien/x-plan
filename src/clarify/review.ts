@@ -31,6 +31,9 @@ export const ReviewSubmissionSchema = Type.Object(
           }),
           addressesQuestion: Type.Boolean({ description: "false only when the Answer is about something else entirely" }),
           unanswered: Type.Array(Type.String(), { description: "Parts of the questions in resolves that no listed Answer settles; empty when all are settled" }),
+          partlyCorrected: Type.Array(Type.String(), {
+            description: "Ids in the Decision's supersedes of which the user corrected only a part (an actor, a value, a condition) without saying the whole item no longer holds",
+          }),
         },
         { additionalProperties: false },
       ),
@@ -144,6 +147,10 @@ export function reviewErrors(submission: ReviewSubmission, items: UnderReview[])
     ...[...seen.keys()].filter((p) => !paths.has(p)).map((p) => `${p} is not a Decision in <review>`),
     ...[...seen.entries()].filter(([, n]) => n > 1).map(([p]) => `${p} is reviewed more than once`),
     ...items.filter((i) => !seen.has(i.path)).map((i) => `${i.path} has no review`),
+    ...submission.reviews.flatMap((r) => {
+      const d = items.find((i) => i.path === r.decision)?.decision;
+      return d ? r.partlyCorrected.filter((id) => !d.supersedes.includes(id)).map((id) => `${r.decision}: partlyCorrected ${id} is not in its supersedes`) : [];
+    }),
   ];
 }
 
@@ -198,6 +205,13 @@ export function judgeReview(state: ClarifyState, items: UnderReview[], submissio
         verdicts.push("embellished");
         errors.push(`states what the user did not say: ${unsupported.map((c) => `"${c}"`).join(", ")}. Remove it: a conclusion holds only what the Answer says or necessarily implies`);
       }
+      if (review.partlyCorrected.length) {
+        verdicts.push("overreach");
+        const ids = review.partlyCorrected.join(", ");
+        errors.push(
+          `supersedes ${ids}, but ${d.answerRef} corrects only part of it: the rest still holds. Do not supersede ${ids}; name it in relatedIds and state the correction in the conclusion`,
+        );
+      }
       if (review.unanswered.length && canFollowUp && !followedUpNow) {
         verdicts.push("partial");
         errors.push(
@@ -206,7 +220,17 @@ export function judgeReview(state: ClarifyState, items: UnderReview[], submissio
       }
     }
 
-    outcome.records.push({ attempt: ctx.attempt, path, answerRef: d.answerRef, resolves: d.resolves, conclusion: d.conclusion, verdicts, unsupported, unanswered: review.unanswered });
+    outcome.records.push({
+      attempt: ctx.attempt,
+      path,
+      answerRef: d.answerRef,
+      resolves: d.resolves,
+      conclusion: d.conclusion,
+      verdicts,
+      unsupported,
+      unanswered: review.unanswered,
+      partlyCorrected: review.partlyCorrected,
+    });
     if (errors.length) {
       outcome.flagged.add(path);
       outcome.issues.push({ path, errors });

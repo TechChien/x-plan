@@ -28,14 +28,16 @@ For every Decision in `decisions`, in order:
    - `decision`: an earlier Decision in `decided` states it.
    - `none`: anything else. That includes what is plausible, common practice, or written in a recommendation the user did not adopt.
 3. **Does the Answer respond to its question?** Judge the Answer as a whole, not this Decision. Set `addressesQuestion: false` only when nothing in the Answer responds to the question, e.g. the question asks when a period starts and the Answer describes what the user sees after submitting a request. A short, vague, partial or reluctant Answer still responds. Users often add something else in the same Answer ("yes, both need login; also, return shipping is always free"): a Decision drawn from that addition still stands on the Answer, so its claims get `answer` and the Answer still responds.
-4. **What is left unanswered?** Read the question of every item in `resolves`. List each part of those questions that none of the listed Answers settles and that a Gherkin scenario of the requirement needs, in a few words. Example: the question asks "Who issues the key, and is one key used for all tenants?" and the Answer says "one shared key for all tenants": list "who issues the key". The question decides what must be answered, not the conclusion. Leave out parts about documents, wording or process around the requirement (e.g. "should the PRD be updated too?"), and parts `brief` or `decided` already settle. Empty when everything needed is settled.
+4. **Does it supersede more than the user corrected?** A Decision may supersede a Brief item only when the user said the item as a whole no longer holds (e.g. the losing side of a contradiction, a rejected assumption). When the user corrected one part of an item - who performs it, one value, one condition - and the rest of it still holds, list that id in `partlyCorrected`. Example: a feature records the wrong actor and the user names the right one; the feature itself stands. Empty when every superseded item was rejected as a whole.
+5. **What is left unanswered?** Read the question of every item in `resolves`. List each part of those questions that none of the listed Answers settles and that a Gherkin scenario of the requirement needs, in a few words. Example: the question asks "Who issues the key, and is one key used for all tenants?" and the Answer says "one shared key for all tenants": list "who issues the key". The question decides what must be answered, not the conclusion. Leave out parts about documents, wording or process around the requirement (e.g. "should the PRD be updated too?"), and parts `brief` or `decided` already settle. Empty when everything needed is settled.
 
 ## Output Contract
-Call `submit_review` once with `reviews`: exactly one entry per Decision in `decisions`, with `decision` set to its `id`, and `claims`, `addressesQuestion` and `unanswered` as described above.
+Call `submit_review` once with `reviews`: exactly one entry per Decision in `decisions`, with `decision` set to its `id`, and `claims`, `addressesQuestion`, `partlyCorrected` and `unanswered` as described above.
 
 ## Failure Conditions
 Your submission is rejected when any of the following is true:
 - You reply in plain text instead of calling `submit_review`.
 - A Decision in `decisions` has no review, or more than one.
 - A review names a Decision that is not in `decisions`.
+- `partlyCorrected` names an id that is not in that Decision's `supersedes`.
 - A statement of a conclusion appears in none of its claims.

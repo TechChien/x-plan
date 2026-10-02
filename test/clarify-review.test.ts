@@ -36,7 +36,7 @@ const submitted = (_state: ClarifyState): Decision[] => [
 ];
 
 const review = (findings: Partial<ReviewSubmission["reviews"][number]>[]): ReviewSubmission => ({
-  reviews: findings.map((f, i) => ({ decision: `decisions[${i}]`, claims: [{ text: "x", source: "answer" }], addressesQuestion: true, unanswered: [], ...f })),
+  reviews: findings.map((f, i) => ({ decision: `decisions[${i}]`, claims: [{ text: "x", source: "answer" }], addressesQuestion: true, unanswered: [], partlyCorrected: [], ...f })),
 });
 
 const ctx = { attempt: 1, final: false, maxFollowUpDepth: 2, followUps: [] };
@@ -94,6 +94,19 @@ describe("judgeReview", () => {
   });
 });
 
+describe("judgeReview on supersedes", () => {
+  test("superseding a whole Brief item the user only partly corrected is sent back: keep the item, name it in relatedIds", () => {
+    const state = afterRoundTwo();
+    const items = underReview(state, [{ ...dec("DEC-2", "R2/OQ-1", ["OQ-1"], { conclusion: "出貨後不可取消", supersedes: ["BR-2", "FEAT-1"] }), round: 3, status: "active" }]);
+    const out = judgeReview(state, items, review([{ partlyCorrected: ["FEAT-1"] }]), ctx);
+    expect(out.records[0]?.verdicts).toEqual(["overreach"]);
+    expect(out.records[0]?.partlyCorrected).toEqual(["FEAT-1"]);
+    expect(out.issues[0]?.errors).toEqual([
+      "supersedes FEAT-1, but R2/OQ-1 corrects only part of it: the rest still holds. Do not supersede FEAT-1; name it in relatedIds and state the correction in the conclusion",
+    ]);
+  });
+});
+
 describe("reviewErrors", () => {
   test("every Decision is reviewed exactly once, and nothing else", () => {
     const state = afterRoundTwo();
@@ -102,5 +115,7 @@ describe("reviewErrors", () => {
     expect(reviewErrors(r, items)).toEqual([]);
     const wrong: ReviewSubmission = { reviews: [r.reviews[0]!, r.reviews[0]!, { ...r.reviews[0]!, decision: "decisions[7]" }] };
     expect(reviewErrors(wrong, items)).toEqual(["decisions[7] is not a Decision in <review>", "decisions[0] is reviewed more than once", "decisions[1] has no review"]);
+    const notSuperseded: ReviewSubmission = { reviews: [{ ...r.reviews[0]!, partlyCorrected: ["BR-2"] }, r.reviews[1]!] };
+    expect(reviewErrors(notSuperseded, items)).toEqual(["decisions[0]: partlyCorrected BR-2 is not in its supersedes"]);
   });
 });

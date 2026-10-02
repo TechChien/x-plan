@@ -165,7 +165,7 @@ export interface AcceptedConflict extends ConflictOp {
 }
 
 /** Why Grounding Review stopped a Decision. */
-export type ReviewVerdict = "embellished" | "partial" | "off-topic";
+export type ReviewVerdict = "embellished" | "partial" | "off-topic" | "overreach";
 
 /** Grounding Review's finding on one submitted Decision, kept for the record and the eval. */
 export interface ReviewRecord {
@@ -182,6 +182,8 @@ export interface ReviewRecord {
   unsupported: string[];
   /** Parts of the questions no Answer settles. */
   unanswered: string[];
+  /** Brief items it supersedes although the user corrected only part of them. Absent in older records. */
+  partlyCorrected?: string[];
 }
 
 export interface RoundRecord {

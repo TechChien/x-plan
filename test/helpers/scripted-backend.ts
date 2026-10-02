@@ -5,15 +5,16 @@ import type { AgentBackend, AgentSession, SessionOptions } from "../../src/agent
  * One assistant turn: plain text (the agent stops), a call of the session's tool, or a call computed from the
  * message the session was prompted with (for agents whose input the test does not know in advance).
  */
-export type ScriptedTurn = { text: string } | { call: unknown } | { respond: (prompt: string) => unknown };
+export type RespondingTurn = { respond: (prompt: string) => unknown };
+export type ScriptedTurn = { text: string } | { call: unknown } | RespondingTurn;
 
 /** A Consistency Check that finds no conflict. */
 export const noConflicts: ScriptedTurn = { call: { conflicts: [] } };
 
 /** A Grounding Review that finds every Decision in its prompt grounded. */
-export const approvingReview: ScriptedTurn = {
+export const approvingReview: RespondingTurn = {
   respond: (prompt) => ({
-    reviews: [...prompt.matchAll(/id: (decisions\[\d+\])/g)].map((m) => ({ decision: m[1], claims: [{ text: "as said", source: "answer" }], addressesQuestion: true, unanswered: [] })),
+    reviews: [...prompt.matchAll(/id: (decisions\[\d+\])/g)].map((m) => ({ decision: m[1], claims: [{ text: "as said", source: "answer" }], addressesQuestion: true, unanswered: [], partlyCorrected: [] })),
   }),
 };
 

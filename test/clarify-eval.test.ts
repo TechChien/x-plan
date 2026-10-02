@@ -192,7 +192,7 @@ describe("runClarifyEval", () => {
       noise: [],
       recommendations: { good: ["return-fee"], bad: [] },
       selfAnswerBlocked: 0,
-      review: { embellished: 0, partial: 0, offTopic: 0 },
+      review: { embellished: 0, partial: 0, offTopic: 0, overreach: 0 },
       conflicts: { handled: ["fee-conflict"], missed: [], unneeded: [] },
       rounds: 3,
       questionsAsked: 8,

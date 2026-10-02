@@ -101,7 +101,7 @@ Clarify 以多個 Round 進行。每一 Round，模型會先解讀你上一輪�
 | `/note [ID] 內容` | 主動補充或更正，例如 `/note DEC-2 VIP 是 10 天` |
 | `/done` | 結束提問；已回答的會先整理成 Decision，其餘標為未決 |
 
-模型不會替你回答：每一條 Decision 都必須對應到你的一則回答，模型也不能自行判定某題不適用或已有答案（[ADR 0007](docs/adr/0007-decisions-grounded-in-user-answers.md)）。Decision 寫入前還會經過 Grounding Review：由另一個 agent 檢查 Decision 有沒有寫進你沒說的內容、你的回答有沒有答完整、有沒有答非所問，有問題就退回重寫或改成追問你（[ADR 0011](docs/adr/0011-grounding-review-before-decisions-are-written.md)）。每一 Round 寫入 Decision 之後，再由 Consistency Check 比對新的 Decision 與先前的 Decision、Brief 事實；發現不能同時成立的組合，就在下一批的最前面問你以哪一邊為準，題目上方會列出兩邊的原文（[ADR 0012](docs/adr/0012-consistency-check-puts-conflicts-to-the-user.md)）。這兩個檢查角色的 thinking 預設比 Clarify 低（Clarify 為 xhigh 或 high 時用 medium，medium 時用 low），可用 config 的 `stages.clarify.review.thinking`、`stages.clarify.consistency.thinking` 調整。每則回答輸入後就立即存檔。中斷後，以 Clarify Run 的 id 重跑就會從中斷的地方接續；上游的 Brief 如果在這之間被改寫過，會拒絕續跑，要改用 `--restart` 從頭開始。
+模型不會替你回答：每一條 Decision 都必須對應到你的一則回答，模型也不能自行判定某題不適用或已有答案（[ADR 0007](docs/adr/0007-decisions-grounded-in-user-answers.md)）。Decision 寫入前還會經過 Grounding Review：由另一個 agent 檢查 Decision 有沒有寫進你沒說的內容、你的回答有沒有答完整、有沒有答非所問、有沒有把你只更正了一部分的 Brief 條目整條推翻，有問題就退回重寫或改成追問你（[ADR 0011](docs/adr/0011-grounding-review-before-decisions-are-written.md)）。每一 Round 寫入 Decision 之後，再由 Consistency Check 比對新的 Decision 與先前的 Decision、Brief 事實；發現不能同時成立的組合，就在下一批的最前面問你以哪一邊為準，題目上方會列出兩邊的原文（[ADR 0012](docs/adr/0012-consistency-check-puts-conflicts-to-the-user.md)）。這兩個檢查角色的 thinking 預設比 Clarify 低（Clarify 為 xhigh 或 high 時用 medium，medium 時用 low），可用 config 的 `stages.clarify.review.thinking`、`stages.clarify.consistency.thinking` 調整。每則回答輸入後就立即存檔。中斷後，以 Clarify Run 的 id 重跑就會從中斷的地方接續；上游的 Brief 如果在這之間被改寫過，會拒絕續跑，要改用 `--restart` 從頭開始。
 
 參數：`--out <dir>`（新 Clarify Run 的目錄）、`--restart`、`--allow-failed-extract`、`--lang <en|zh|cn>`（預設沿用 Brief 的語言）、`--max-rounds <n>`（預設 8）、`--batch-size <n>`（預設 5）、`--config <path>`。
 
@@ -242,7 +242,7 @@ XPLAN_API_KEY=... pnpm eval --stage clarify [--cases returns] [--repeat 5]
 - `conflicts`：使用者後來的回答會與先前的 Decision 衝突時，標出衝突（`any` 關鍵字）與衝突題的回答 `reply`。衝突題的題目包含任一關鍵字，或 interpreter 自行 revise 了結論包含關鍵字的 Decision，都算處理到。沒有對到標註的衝突題計為多餘衝突題。
 - `unmatchedReply`：沒有對到任何標註的題目一律這樣回答（預設 `/na`），並計為雜訊題。
 
-報告的指標：解讀正確率、錯誤推翻數、追問召回與多餘追問、gap 召回、雜訊題數、建議答案命中率、自行作答攔截數（agent 試圖在沒有回答時做出 Decision 而被退回的次數）、Review 攔下數（Grounding Review 依多加內容／只答一部分／答非所問退回的 Decision 數）、衝突處理率與多餘衝突題數、Round 數與結束原因、交卷次數、prefix cache 命中率、token 用量。每次執行的 run 目錄另有 `eval-answers.json`，記錄每一題是由哪個標註回答的。
+報告的指標：解讀正確率、錯誤推翻數、追問召回與多餘追問、gap 召回、雜訊題數、建議答案命中率、自行作答攔截數（agent 試圖在沒有回答時做出 Decision 而被退回的次數）、Review 攔下數（Grounding Review 依多加內容／只答一部分／答非所問／推翻範圍過大退回的 Decision 數）、衝突處理率與多餘衝突題數、Round 數與結束原因、交卷次數、prefix cache 命中率、token 用量。每次執行的 run 目錄另有 `eval-answers.json`，記錄每一題是由哪個標註回答的。
 
 ## 開發
 

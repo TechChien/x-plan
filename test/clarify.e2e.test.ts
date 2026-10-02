@@ -13,7 +13,7 @@ import { runClarify, type ClarifyOptions } from "../src/clarify/stage.ts";
 import { parseConfig } from "../src/config.ts";
 import { startTelemetry } from "../src/telemetry/setup.ts";
 import { returnsBrief } from "./helpers/brief.ts";
-import { approvingReview, noConflicts, ScriptedBackend, type ScriptedTurn } from "./helpers/scripted-backend.ts";
+import { approvingReview, noConflicts, ScriptedBackend, type RespondingTurn, type ScriptedTurn } from "./helpers/scripted-backend.ts";
 import { CollectingExporter } from "./helpers/spans.ts";
 
 const config = parseConfig({ provider: { baseUrl: "http://unused" } });
@@ -282,10 +282,11 @@ interface Finding {
   addressesQuestion?: boolean;
   unsupported?: string[];
   unanswered?: string[];
+  partlyCorrected?: string[];
 }
 
 /** A Grounding Review that judges each Decision in its prompt by its conclusion. */
-const reviewer = (judge: (conclusion: string) => Finding): ScriptedTurn => ({
+const reviewer = (judge: (conclusion: string) => Finding): RespondingTurn => ({
   respond: (prompt) => {
     const body = /<review>\n([\s\S]*)\n<\/review>/.exec(prompt)?.[1] ?? "";
     const { decisions } = parseYaml(body) as { decisions: { id: string; conclusion: string }[] };
@@ -297,6 +298,7 @@ const reviewer = (judge: (conclusion: string) => Finding): ScriptedTurn => ({
           claims: [{ text: d.conclusion, source: "answer" }, ...(f.unsupported ?? []).map((text) => ({ text, source: "none" }))],
           addressesQuestion: f.addressesQuestion ?? true,
           unanswered: f.unanswered ?? [],
+          partlyCorrected: f.partlyCorrected ?? [],
         };
       }),
     };
@@ -386,6 +388,26 @@ describe("Grounding Review", () => {
     expect(state.rejected).toEqual([{ round: 2, kind: "decision", item: { id: "DEC-1", ...bad }, errors: [expect.stringContaining("states what the user did not say")] }]);
     expect(state.decisions.map((d) => [d.id, d.conclusion])).toEqual([["DEC-2", "賣家負擔運費"]]);
     expect(replay(returnsBrief(), state)).toEqual(state);
+  });
+
+  test("a Decision may not supersede a whole Brief item the user only partly corrected", async () => {
+    const dir = runDir();
+    const b = backend(
+      [
+        [firstRound],
+        [
+          round([op("R1/OQ-1", ["OQ-1"], "已出貨的訂單不能取消", { supersedes: ["BR-2"] })], ["ASM-2", "ASM-1"]),
+          round([op("R1/OQ-1", ["OQ-1"], "已出貨的訂單不能取消，BR-2 的期限只適用未出貨的訂單", { relatedIds: ["BR-2"] })], ["ASM-2", "ASM-1"]),
+        ],
+      ],
+      () => [{ respond: (prompt) => (prompt.includes("supersedes:") ? reviewer(() => ({ partlyCorrected: ["BR-2"] })) : approvingReview).respond(prompt) }],
+    );
+    const report = await runClarify(options(dir, b, (q) => (q.id === "OQ-1" ? "已出貨就不能取消" : "/defer")));
+    expect(report.status).toBe("succeeded");
+    const state = readJson<ClarifyState>(join(dir.clarify, "02-state.json"));
+    expect(state.decisions.map((d) => [d.supersedes, d.relatedIds])).toEqual([[[], ["BR-2"]]]);
+    expect(state.rounds[1]?.reviews?.map((r) => r.verdicts)).toEqual([["overreach"], []]);
+    expect(readJson<AlignedBrief>(join(dir.clarify, "02-aligned.json")).supersededBy).toEqual({});
   });
 
   test("a review that fails fails the round, so it can be retried", async () => {

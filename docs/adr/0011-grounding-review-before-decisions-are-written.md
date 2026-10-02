@@ -22,6 +22,9 @@ ADR 0007 只保證每條 Decision 都指向一則有作答內容的 Answer，但
 | 多加了內容（`embellished`） | 刪掉沒有根據的部分後重交 |
 | 只答一部分（`partial`） | 為沒答的部分提出追問（`parentId` 指向原題）；Decision 只能保留使用者說過的部分 |
 | 答非所問（`off-topic`） | 刪掉這條 Decision，改為追問，把原題再問一次 |
+| 推翻範圍過大（`overreach`） | 不再 `supersedes` 該條目，改列在 `relatedIds`，並在結論中寫出更正的部分 |
+
+`overreach` 是在真實執行中發現的：使用者只更正了 FEAT-1、FEAT-2 的執行者，Decision 卻用 `supersedes` 推翻了整個功能。Aligned Brief 因此把這兩個核心功能列為「已被取代」，輸入、輸出、回應格式等細節都會在 Write 時遺失。被推翻的條目會從需求中消失，所以只有使用者表示整條都不成立時，才能用 `supersedes`。
 
 追問有時已經不可能：收尾輪不能再提問、追問深度已達上限，或者這題已經追問過一次。這時的處理方式：
 - `partial` 不再要求追問，Decision 只保留使用者說過的部分。
