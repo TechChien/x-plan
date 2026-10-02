@@ -144,6 +144,25 @@ export const WrittenScenarioSchema = Type.Object(
 );
 export type WrittenScenario = Static<typeof WrittenScenarioSchema>;
 
+/** A written scenario as accepted. */
+export interface AcceptedScenario extends WrittenScenario {
+  /** The outline's kind, or open when the writer gave an `openReason`. */
+  kind: ScenarioKind;
+  /** Why it is kept although checks still flag it; rendered `@unverified`. */
+  unverified?: string[];
+}
+
+/** One Feature as its writer wrote it and the checks accepted it. */
+export interface WrittenFeature {
+  featureId: string;
+  description: string;
+  background: Step[];
+  /** In outline order. */
+  scenarios: AcceptedScenario[];
+  /** Why the Background is kept although checks still flag it. */
+  backgroundUnverified?: string[];
+}
+
 /** Parameters of `submit_feature`: the steps of one Feature's scenarios, whose set the outline fixed. */
 export const FeatureSubmissionSchema = Type.Object(
   {

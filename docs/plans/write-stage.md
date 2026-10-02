@@ -138,9 +138,16 @@ Step = { "keyword": "Given" | "When" | "Then" | "And" | "But", "text": "…", "s
 3. Scenario Outline：每個 header 欄位都要出現在 steps 的 `<欄位>` 中；每列的格數等於欄數。`kind` 為 `derived` 的 Scenario，所有 Examples 區塊都必須是 `derived`。
 4. **數值出處**：不是 `derived` 的內容中，steps 與 Examples 的阿拉伯數字（先把全形數字與一到九十九的中文數字正規化）必須出現在它引用的條目文字中（事實的欄位與 Evidence 引文、Decision 的結論與使用者原話）。`<…>` 佔位內的文字不檢查。
 5. `openReason` 只能填在 outline 中為 `specified`、`derived` 的 Scenario 上。
-6. 語言檢查（ADR 0005）：描述、step、Examples 名稱與 cells。Term、Actor、Entity 的原名、`<…>` 佔位內容與引號中的原文值不檢查。
+6. **Then**：`specified`、`derived` 的 Scenario 至少要有一個 Then；`open`、`deferred`（包括 writer 降級的）不得有 Then，最後一行由程式產生。
+7. 語言檢查（ADR 0005）：描述、Background、step、Examples 名稱與 cells。Term、Actor、Entity、Dependency 的原名、`<…>` 佔位內容與引號（「」、『』、""、“”）中的原文值先移除再檢查。
 
-最後一次交卷時部分接受：違反規則 2 的 Scenario 移入 `03-rejected.json`；違反規則 4 的照常收下並標 `@unverified`；語言不符的照常收下並寫入警告。
+Background 的 sourceIds 可以引用本 Feature 任何一個 Scenario 的有效 sourceIds 加上 `<context>`；它的數值也檢查。
+
+最後一次交卷時部分接受：
+- 違反規則 1（不在 outline 中、重複）、2、3 的 Scenario 移入 `03-rejected.json`。規則 3 不通過的表格渲染出來不是合法的 Gherkin，所以不能保留。Background 違反規則 2 時整個 Background 移入 `03-rejected.json`。
+- 違反規則 4、5、6 的照常收下並標 `@unverified`，原因記在 Scenario 上；規則 5 的 `openReason` 不予採用。Background 違反規則 4 時照常收下，原因記在 Feature 上。
+- 語言不符的照常收下並寫入警告。
+- outline 中有、但最後沒有被收下的 Scenario（沒寫或被排除）渲染為 `@unwritten`。
 
 ### 1.8 Scenario Review
 

@@ -1,7 +1,10 @@
 import type { AlignedBrief, AlignedDecision } from "../../src/clarify/aligned.ts";
 import type { RequirementBrief } from "../../src/extract/schema.ts";
+import { coverageSets } from "../../src/write/coverage.ts";
+import { applyOutline, checkOutline } from "../../src/write/outline.ts";
+import type { OutlineScenario, OutlineSubmission, WriteOutline } from "../../src/write/schema.ts";
 import { returnsBrief } from "./brief.ts";
-import { ev, rule } from "./facts.ts";
+import { actor, ev, rule } from "./facts.ts";
 
 // The category union is built with map(), so TypeScript cannot narrow a literal to it.
 type NonFunctional = RequirementBrief["nonFunctional"][number];
@@ -28,6 +31,7 @@ export const alignedDec = (id: string, extra: Partial<AlignedDecision> = {}): Al
  */
 export function alignedFixture(): AlignedBrief {
   const brief = returnsBrief();
+  brief.actors.push(actor("ACT-1", "會員", [ev("prd.md", 3, "會員可以下單。")]));
   brief.businessRules.push(rule("BR-3", "到貨 7 天內可退貨", [ev("prd.md", 15, "到貨 7 天內可退貨。")], ["FEAT-2"]));
   brief.acceptanceCriteria.push(
     { id: "AC-1", featureId: "FEAT-2", kind: "example", text: "到貨第 2 天申請退貨，系統接受", evidence: [ev("prd.md", 16, "例如到貨第 2 天申請，系統接受。")] },
@@ -54,4 +58,46 @@ export function alignedFixture(): AlignedBrief {
       { id: "OQ-4", kind: "OQ", origin: "brief", status: "unresolved", question: "退貨頁面要顯示什麼？", relatedIds: ["FEAT-2"], answers: [] },
     ],
   };
+}
+
+export const scn = (title: string, kind: OutlineScenario["kind"], sourceIds: string[], extra: Partial<OutlineScenario> = {}): OutlineScenario => ({
+  title,
+  kind,
+  sourceIds,
+  agendaIds: [],
+  ...extra,
+});
+
+/** Covers everything the fixture requires: FEAT-1/2, BR-2/3, AC-1/2, DEC-1/5/6, with DEC-4 marked not behavioural. */
+export function validOutline(): OutlineSubmission {
+  return {
+    features: [
+      {
+        featureId: "FEAT-1",
+        rules: [
+          {
+            sourceId: "DEC-1",
+            title: "一般會員 7 天內可取消",
+            scenarios: [scn("下單當天取消", "specified", ["AC-2", "BR-2"]), scn("下單第 8 天取消被拒", "derived", [])],
+          },
+          { sourceId: "DEC-5", title: "VIP 10 天內可取消", scenarios: [scn("VIP 第 10 天取消", "specified", [])] },
+        ],
+        scenarios: [scn("已出貨的訂單取消", "deferred", ["FEAT-1"], { agendaIds: ["OQ-1"] })],
+      },
+      {
+        featureId: "FEAT-2",
+        rules: [{ sourceId: "BR-3", title: "鑑賞期內可退貨", scenarios: [scn("到貨第 2 天申請退貨", "specified", ["AC-1", "DEC-6"])] }],
+        scenarios: [scn("退貨頁面的內容", "open", ["FEAT-2"], { agendaIds: ["OQ-4"] }), scn("退貨申請的回應時間", "specified", ["NFR-1"])],
+      },
+    ],
+    notBehavioral: [{ id: "DEC-4", reason: "只是名詞定義" }],
+  };
+}
+
+/** `validOutline()` accepted and numbered: FEAT-1 holds SCN-1 to SCN-4, FEAT-2 holds SCN-5 to SCN-7. */
+export function outlineFixture(aligned = alignedFixture()): WriteOutline {
+  const sets = coverageSets(aligned);
+  const result = checkOutline(validOutline(), { aligned, sets, isLast: false, language: "zh" });
+  if (result.issues.length) throw new Error(JSON.stringify(result.issues));
+  return applyOutline(result.accepted, aligned, result.uncovered);
 }

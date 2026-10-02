@@ -82,6 +82,22 @@ export function coverageSets(aligned: AlignedBrief): CoverageSets {
   return { features, mustCover, citable, forbidden, notBehavioralAllowed, notBehavioralBlocked, agenda };
 }
 
+/**
+ * What every writer gets in `<context>` and may cite in any step: the names steps are written with. A Term, Actor,
+ * Entity or Dependency a Decision replaced is represented by that Decision instead.
+ */
+export function contextIds(aligned: AlignedBrief, sets: CoverageSets): Set<string> {
+  const { brief } = aligned;
+  const named = [...brief.actors, ...brief.glossary, ...brief.domainEntities, ...brief.dependencies].map((it) => it.id);
+  const ids = new Set<string>();
+  for (const id of named) {
+    if (sets.citable.has(id)) ids.add(id);
+    const reason = sets.forbidden.get(id);
+    if (reason?.kind === "superseded") for (const by of reason.by) ids.add(by);
+  }
+  return ids;
+}
+
 /** Why `id` cannot be cited, phrased as feedback that says what to cite instead; undefined when it can be. */
 export function citationError(sets: CoverageSets, id: string): string | undefined {
   if (sets.citable.has(id)) return undefined;

@@ -2,42 +2,8 @@ import { describe, expect, test } from "vitest";
 import type { AlignedBrief } from "../src/clarify/aligned.ts";
 import { coverageSets } from "../src/write/coverage.ts";
 import { applyOutline, checkOutline } from "../src/write/outline.ts";
-import type { OutlineFeature, OutlineScenario, OutlineSubmission } from "../src/write/schema.ts";
-import { alignedFixture } from "./helpers/write.ts";
-
-const scn = (title: string, kind: OutlineScenario["kind"], sourceIds: string[], extra: Partial<OutlineScenario> = {}): OutlineScenario => ({
-  title,
-  kind,
-  sourceIds,
-  agendaIds: [],
-  ...extra,
-});
-
-/** Covers everything the fixture requires: FEAT-1/2, BR-2/3, AC-1/2, DEC-1/5/6, with DEC-4 marked not behavioural. */
-function validOutline(): OutlineSubmission {
-  return {
-    features: [
-      {
-        featureId: "FEAT-1",
-        rules: [
-          {
-            sourceId: "DEC-1",
-            title: "一般會員 7 天內可取消",
-            scenarios: [scn("下單當天取消", "specified", ["AC-2", "BR-2"]), scn("下單第 8 天取消被拒", "derived", [])],
-          },
-          { sourceId: "DEC-5", title: "VIP 10 天內可取消", scenarios: [scn("VIP 第 10 天取消", "specified", [])] },
-        ],
-        scenarios: [scn("已出貨的訂單取消", "deferred", ["FEAT-1"], { agendaIds: ["OQ-1"] })],
-      },
-      {
-        featureId: "FEAT-2",
-        rules: [{ sourceId: "BR-3", title: "鑑賞期內可退貨", scenarios: [scn("到貨第 2 天申請退貨", "specified", ["AC-1", "DEC-6"])] }],
-        scenarios: [scn("退貨頁面的內容", "open", ["FEAT-2"], { agendaIds: ["OQ-4"] }), scn("退貨申請的回應時間", "specified", ["NFR-1"])],
-      },
-    ],
-    notBehavioral: [{ id: "DEC-4", reason: "只是名詞定義" }],
-  };
-}
+import type { OutlineFeature, OutlineSubmission } from "../src/write/schema.ts";
+import { alignedFixture, scn, validOutline } from "./helpers/write.ts";
 
 function check(submission: OutlineSubmission, opts: { isLast?: boolean; aligned?: AlignedBrief } = {}) {
   const aligned = opts.aligned ?? alignedFixture();
