@@ -1,10 +1,10 @@
 ---
-variables: [context, vocabulary, feature, sources]
+variables: [context, feature, sources]
 ---
 <context>
 {{context}}
 </context>
-{{vocabulary}}
+
 <feature>
 {{feature}}
 </feature>

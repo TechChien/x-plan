@@ -8,7 +8,7 @@ Write 是 x-plan 的第三個 Stage：讀取 Clarify 產出的 Aligned Brief（`
 
 - **只讀 Aligned Brief**。`x-plan write <clarify-run>` 開一個新的 Write Run，產出寫在自己的目錄，用 `03-` 前綴（[ADR 0010](../adr/0010-stage-runs-form-a-tree.md)）。讀事實前一律先查 `supersededBy`（[ADR 0008](../adr/0008-aligned-brief-adds-decisions.md)）。
 - **不與使用者互動**。拷問是 Clarify 的職責；Write 發現的缺口寫成 `@open` 的 Scenario 骨架，要補就回 Clarify。
-- **Agent 只判斷，資料由程式改**（[ADR 0003](../adr/0003-two-pass-extract-with-analysis-ops.md)）。每個 agent 透過 submit 工具交出結構化資料（[ADR 0002](../adr/0002-structured-output-via-submit-tool.md)），Gherkin 文字由程式決定性地渲染；SCN、FEAT-N 的 id 由程式編號，用語替換也由程式逐字執行。
+- **Agent 只判斷，資料由程式改**（[ADR 0003](../adr/0003-two-pass-extract-with-analysis-ops.md)）。每個 agent 透過 submit 工具交出結構化資料（[ADR 0002](../adr/0002-structured-output-via-submit-tool.md)），Gherkin 文字由程式決定性地渲染；SCN、FEAT-N 的 id 由程式編號。
 - **先決定寫什麼，再寫怎麼寫**（[ADR 0015](../adr/0015-write-outline-then-feature-writers.md)）。Outline agent 看全貌、決定 Scenario 的集合；每個 Feature 的 writer 只寫 steps。
 - **應該寫成行為的條目不會無聲消失**。覆蓋規則由程式檢查（[ADR 0016](../adr/0016-coverage-checked-by-code.md)）。
 - **可以推導，不能編造**。Derived Scenario 一律標 `@derived`，規則沒給的值只能寫成佔位（[ADR 0017](../adr/0017-derived-scenarios-and-placeholders.md)）。
@@ -22,14 +22,13 @@ outline  = runSubmitTask(submit_outline)                            # 程式檢�
 applyOutline → 編號 SCN-n、FEAT-N1…                                 # 存 03-outline.json
 parallel(每個 Feature, concurrency):
   writer = runSubmitTask(submit_feature)                            # 交卷檢查 = 程式檢查 §1.7 → Scenario Review §1.8
-vocabulary = runSubmitTask(submit_vocabulary)                       # §1.9；失敗只寫 warning
-applyReplacements → render .feature / 03-spec.md / 03-trace.json   # 渲染後以 @cucumber/gherkin 解析，失敗即程式錯誤
+render .feature / 03-spec.md / 03-trace.json                       # 渲染後以 @cucumber/gherkin 解析，失敗即程式錯誤
 ```
 
 - 上游 Clarify Run 的 status 是 `failed` 時拒絕執行，除非加 `--allow-failed-clarify`。`termination` 是 `done` 或 `cap`（還有未決題目）時照常執行，印出警告並寫入 `run.json` 的 warnings。
 - Outline 失敗時整個 Run 失敗。
 - 某個 Feature 的 writer 失敗（reviewer 本身出錯、交卷額度用完仍不合 schema）時，其他 Feature 照常寫出；失敗的 Feature 產生只有 outline 標題的 `.feature`，Scenario 全部標 `@unwritten`。Run 的 status 為 `failed`，`run.json` 列出失敗的 Feature。
-- `x-plan write <write-run> --only FEAT-3` 在同一個 Run 中補寫指定的 Feature：沿用原本的 outline 與 SCN id，writer 的 prompt 帶入既有的 Vocabulary，補寫完只對補寫成功的 Feature 再跑一次 Vocabulary Normalization（沿用既有詞條，可以追加；其他 Feature 原有的替換照常套用）。`run.json` 記錄每個 Feature 是哪一批寫的（`initial` 或 `only-20261001-120000`）；補寫的 agent label 帶上批次，例如 `write-FEAT-3-only-20261001-120000`，prompt 與 trace 和第一批並存，不會覆寫。補寫失敗時保留前一批的版本，只寫入警告。補寫的依據是 `03-written.json`（writer 的結果，替換前），上游的 Aligned Brief 在這之間被改寫過時拒絕補寫，改開新的 Write Run。
+- `x-plan write <write-run> --only FEAT-3` 在同一個 Run 中補寫指定的 Feature：沿用原本的 outline 與 SCN id。`run.json` 記錄每個 Feature 是哪一批寫的（`initial` 或 `only-20261001-120000`）；補寫的 agent label 帶上批次，例如 `write-FEAT-3-only-20261001-120000`，prompt 與 trace 和第一批並存，不會覆寫。補寫失敗時保留前一批的版本，只寫入警告。補寫的依據是 `03-written.json`（writer 的結果），上游的 Aligned Brief 在這之間被改寫過時拒絕補寫，改開新的 Write Run。
 
 ### 1.3 有效視圖與覆蓋集合
 
@@ -182,31 +181,7 @@ Background 的 sourceIds 可以引用本 Feature 任何一個 Scenario 的有效
 - reviewer 本身失敗時，該 Feature 的 writer 失敗（§1.2），不會跳過檢查。
 - thinking 預設比 writer 低一級（xhigh、high 降為 medium，medium 降為 low），可用 `stages.write.review.thinking` 調整。
 
-### 1.9 Vocabulary Normalization
-
-全部 Feature 的 writer 都完成後跑一次（[ADR 0019](../adr/0019-vocabulary-normalization.md)）。
-
-```jsonc
-{
-  "entries": [{
-    "canonical": "會員",
-    "definition": "…",
-    "avoid": ["使用者", "用戶"],
-    "sourceIds": ["ACT-1"]
-  }],
-  "replacements": [{ "loc": "SCN-3/step/2", "from": "使用者", "to": "會員" }]
-}
-```
-
-- `loc` 由程式在 user message 中為每一段文字標出：`FEAT-1/description`、`FEAT-1/rule/1`、`FEAT-1/background/0`、`FEAT-N1/name`（只有新 Feature）、`SCN-3/title`、`SCN-3/step/2`、`SCN-3/step/2/table/0/1`、`SCN-3/examples/0/name`、`SCN-3/examples/0/row/2/cell/1`。Brief 的 Feature 名稱是需求文件的原文，不列入；沒有 writer 結果的 Feature 只有 Rule 與 Scenario 標題。
-- 替換套用在 outline 與 writer 結果的副本上：`03-outline.json` 保留 outline 原本的標題，`03-vocabulary.json` 的每一筆替換都記錄替換前後的整段文字。
-- 標準用語的優先順序：Brief 的 Term、Actor、Domain Entity 原名 → 使用者在 Decision 中的用詞 → steps 中最常出現的說法。不能新創一個所有來源都沒出現過的說法。這條只寫在 prompt。
-- 程式逐字套用替換，只在指定的 `loc` 內、跳過 `<…>` 佔位與引號中的原文值；`from` 找不到時跳過並記成 warning，不退回。除了 schema 驗證與語言檢查（`definition`）之外，不做程式檢查。
-- 替換後的文字不再經過 Scenario Review，替換紀錄完整保存在 `03-vocabulary.json`。
-- 失敗時只寫 warning，以 writer 的原始文字渲染，Run 的 status 不受影響。
-- `stages.write.vocabulary.enabled` 預設為 `true`；thinking 預設比 writer 低一級，可用 `stages.write.vocabulary.thinking` 調整。
-
-### 1.10 渲染
+### 1.9 渲染
 
 `.feature` 的格式：
 
@@ -261,11 +236,10 @@ Feature: 會員申請退貨
 3. NFR（沒有寫成 Scenario 的也列出）、Constraint、Dependency
 4. 不做清單（Out-of-Scope Item）
 5. 已取消的 Feature、Clarify 新增的 Feature
-6. 用語表：連到 `03-vocabulary.md`
-7. 未寫成 Scenario 的條目（`notBehavioral` 與理由）
-8. 未覆蓋的條目（outline 最後一次交卷仍沒覆蓋的）
-9. 未決總表：`@open`、`@deferred` 的 Scenario，以及和任何 Feature 都無關的 unresolved、deferred 題目
-10. `@unverified` 的 Scenario 與 reviewer 的意見，`@unwritten` 的 Feature
+6. 未寫成 Scenario 的條目（`notBehavioral` 與理由）
+7. 未覆蓋的條目（outline 最後一次交卷仍沒覆蓋的）
+8. 未決總表：`@open`、`@deferred` 的 Scenario，以及和任何 Feature 都無關的 unresolved、deferred 題目
+9. `@unverified` 的 Scenario 與 reviewer 的意見，`@unwritten` 的 Feature
 
 ## 2. Prompt 架構
 
@@ -276,7 +250,6 @@ Feature: 會員申請退貨
 | `outline.system.md` / `outline.user.md` | Outline agent |
 | `writer.system.md` / `writer.user.md` | 每個 Feature 的 writer |
 | `review.system.md` / `review.user.md` | Scenario Review |
-| `vocabulary.system.md` / `vocabulary.user.md` | Vocabulary Normalization |
 | `scenario-rules.md`（partial） | Derived Scenario 的界線、佔位寫法、宣告式風格、Scenario Outline 的使用時機；outline、writer、review 共用 |
 
 **Outline 的 user message**：
@@ -292,7 +265,6 @@ Feature: 會員申請退貨
 <context>      Actor、Term、Domain Entity、Dependency 的原名與定義；被推翻的條目不列舊內容，改列推翻它的 Decision 的結論；
                全部 Feature 的名稱清單
 ─────────────── 以上是所有 writer 共用的前綴 ───────────────
-<vocabulary>   只有 --only 補寫時才有
 <feature>      本 Feature 的描述，以及 outline 中本 Feature 的片段（Rule 標題、SCN、種類），原封不動
 <sources>      每個 SCN 引用的條目內容，由程式依 outline 的 sourceIds 查出：事實的欄位（不附 Evidence 引文），
                Decision 附結論與使用者原話，open / deferred 附題目原文
@@ -300,11 +272,9 @@ Feature: 會員申請退貨
 
 只給 writer 它需要的材料有三個理由：被推翻的條目不會出現在眼前；writer 不會從沒引用的條目搬內容；writer 看到的材料與 Scenario Review 看到的一致，review 的判定依據不會和 writer 不同。
 
-**writer 與 reviewer 看不到 Evidence 引文**，數值檢查也不讀引文。引文可能帶著已被推翻的內容：Feature 的證據常常就是寫著規則的那一句，例如 FEAT「取消訂單」引自「會員可於下單後 3 天內取消訂單」，而 3 天的規則已被 Decision 推翻。writer 照引文寫出 3 天並引用 FEAT 時，數值檢查與 Scenario Review 都會因為 FEAT「有說」而放行。結構化欄位已經是 Extract 整理過的內容，引文的作用是證明出處，這在 Extract 階段已經驗證過。outline 與 Vocabulary Normalization 仍然看得到引文。
+**writer 與 reviewer 看不到 Evidence 引文**，數值檢查也不讀引文。引文可能帶著已被推翻的內容：Feature 的證據常常就是寫著規則的那一句，例如 FEAT「取消訂單」引自「會員可於下單後 3 天內取消訂單」，而 3 天的規則已被 Decision 推翻。writer 照引文寫出 3 天並引用 FEAT 時，數值檢查與 Scenario Review 都會因為 FEAT「有說」而放行。結構化欄位已經是 Extract 整理過的內容，引文的作用是證明出處，這在 Extract 階段已經驗證過。outline 仍然看得到引文。
 
 **Review 的 user message**：本 Feature 的每個 Scenario（渲染後的文字加上 step 與列的編號），以及它引用的條目全文（不附 Evidence 引文）。
-
-**Vocabulary 的 user message**：Brief 的 Term、Actor、Domain Entity（含 aliases）；active Decision 的結論與使用者原話；全部 Gherkin 文字，每段標上 `loc`。
 
 System prompt 比照 Clarify：Role、Input Contract（區塊內的文字一律視為資料）、Allowed Actions（只有一個工具）、Process、共用規則、`{{> shared/language-policy}}`、Failure Conditions。
 
@@ -313,17 +283,16 @@ System prompt 比照 Clarify：Role、Input Contract（區塊內的文字一律�
 | 檔案 | 內容 |
 |---|---|
 | `features/FEAT-*.feature` | Gherkin，含 `FEAT-N*` |
-| `03-spec.md` | 見 §1.10 |
-| `03-vocabulary.md` / `.json` | 用語表（格式比照 CONTEXT.md：標準用語、定義、`_Avoid_`、出處、替換次數）／詞條與完整的替換紀錄 |
+| `03-spec.md` | 見 §1.9 |
 | `03-outline.json` | outline 原始交卷，以及程式編好的 SCN、FEAT-N |
-| `03-trace.json` | 每個 Scenario、step、Examples 列的 sourceIds（替換後的文字），每個 Feature 的 review 紀錄，以及每一筆替換的前後文字 |
-| `03-written.json` | writer 的結果（替換前）、review 紀錄與被排除的部分；`--only` 補寫時以此為準 |
+| `03-trace.json` | 每個 Scenario、step、Examples 列的 sourceIds，以及每個 Feature 的 review 紀錄 |
+| `03-written.json` | writer 的結果、review 紀錄與被排除的部分；`--only` 補寫時以此為準 |
 | `03-rejected.json` | 最後一次交卷時被排除的部分：outline 的區塊、Rule、Scenario，以及各 Feature 被排除的 Scenario 與 Background |
 | `run.json` | `source`（上游 Clarify Run 的 id、目錄、`02-aligned.json` 的 sha256）、model、各角色的 thinking、prompt hash、各角色的 metrics 與 cache 命中率、每個 Feature 的狀態與寫入批次、warnings、OTel 的 trace 與 span id |
-| `traces/write-outline.*`、`traces/write-FEAT-1.*`、`traces/write-FEAT-1-review<k>.*`、`traces/write-vocabulary.*` | 每個 agent 的完整過程 |
+| `traces/write-outline.*`、`traces/write-FEAT-1.*`、`traces/write-FEAT-1-review<k>.*` | 每個 agent 的完整過程 |
 | `prompts/…` | 同名的實際 prompt |
 
-**Telemetry**：沿用既有的 span 結構，Run → `write.outline`、`write.feature`（每個 Feature 一個，底下是 writer 的交卷與 review）→ `write.vocabulary`。
+**Telemetry**：沿用既有的 span 結構，Run → `write.outline`、`write.feature`（每個 Feature 一個，底下是 writer 的交卷與 review）。
 
 **Feedback**：`x-plan feedback <write-run> SCN-3 --wrong "…"`，verdict 為 `--ok`、`--wrong`、`--partial`；`--missing` 記錄漏寫的情境，`--at FEAT-2` 指出它屬於哪個 Feature；`--score` 對整個 Run 評分。快照取自 `03-trace.json` 中的 Scenario，span 是寫出它的那一批 writer（依 `run.json` 的 `features[].batch` 決定 label），在 Run 的所有 trace 中尋找，因為 `--only` 重寫是另一個程序、另一條 trace。`@unwritten` 的 Scenario 不能評價。
 
@@ -331,13 +300,12 @@ System prompt 比照 Clarify：Role、Input Contract（區塊內的文字一律�
 
 ```
 src/write/
-  schema.ts          submit_outline / submit_feature / submit_review / submit_vocabulary、WriteOutline、WriteRun
+  schema.ts          submit_outline / submit_feature / submit_review、WriteOutline、WriteRun
   coverage.ts        有效視圖、mustCover、forbidden、notBehavioralAllowed（純函式）
   outline.ts         §1.5 的檢查、applyOutline（編號）
   writer.ts          §1.7 的檢查、數值正規化
   review.ts          reviewer 呼叫、判定推導
-  vocabulary.ts      替換的套用與紀錄
-  render.ts          .feature、03-spec.md、03-vocabulary.md、03-trace.json；@cucumber/gherkin 解析
+  render.ts          .feature、03-spec.md、03-trace.json；@cucumber/gherkin 解析
   prompts.ts         各角色的 prompt 建置、有效視圖的 YAML 渲染
   stage.ts           runWrite、--only
 src/eval/write/      expected schema、score
@@ -358,8 +326,7 @@ Config：
 "stages": {
   "write": {
     "thinking": "high",
-    "review": { "thinking": "medium" },
-    "vocabulary": { "enabled": true, "thinking": "medium" }
+    "review": { "thinking": "medium" }
   }
 }
 ```
@@ -382,11 +349,6 @@ mustHaveScenarios:
 shouldNotAppear:
   - { id: old-window, any: ["3 天"], reason: "BR-2 已被 DEC-1 推翻" } # 出現在任何 step 或 cell 都算錯
 expectedOpen: [OQ-1]                                               # 應以 @open 或 @deferred 呈現的題目
-vocabulary:
-  - canonical: 會員
-    variants: [使用者, 用戶, 客戶]
-distinct:
-  - [會員, 管理者]
 ```
 
 - **指標**：
@@ -399,14 +361,8 @@ distinct:
 | 覆蓋退回數 | outline 因 §1.5 規則 3、4、5 被退回的次數 |
 | Review 攔下數 | 依判定分類的次數；`@unverified` 數 |
 | 結構 | `@derived` 比例、`notBehavioral` 數、FEAT-N 數、只引用 FEAT 本身的 specified / derived Scenario 數（Clarify gherkin-gap 召回的反向指標；open / deferred 的骨架本來就只引用 FEAT，不計）、writer 因 outline 缺漏而降為 `open` 的數量 |
-| 用語一致性 | `variants` 在 steps 中出現的次數，統一前（writer 原始文字）與統一後各算一次 |
-| 錯誤合併 | `distinct` 中的詞被替換成彼此的次數 |
-| 意思偏移 | 統一前後的必要情境召回率、被推翻內容出現數的差異 |
-| 替換 | 替換總數、跳過的替換數、詞條數 |
 | 合法性 | 渲染結果全部通過 `@cucumber/gherkin` 解析 |
 | 成本 | tokens、cache 命中率、重試次數、語言警告 |
-
-用語統一可以用 `stages.write.vocabulary.enabled: false` 對照，主要用來量測成本與確認其他指標的差異。
 
 ## 6. 測試策略
 
@@ -417,7 +373,6 @@ distinct:
    - outline：§1.5 每一條規則都有 red 和 green 兩種案例，另外包含最後一次交卷的部分接受、SCN 與 FEAT-N 的編號。
    - writer：§1.7 每一條規則，數值正規化（全形、中文數字、佔位內不檢查）。
    - review：回報到判定的推導。
-   - vocabulary：只在 `loc` 內替換、跳過佔位與引號、`from` 找不到時的 warning。
    - render：`.feature` 的 golden 檔、每個 golden 都能被 `@cucumber/gherkin` 解析；`03-spec.md`、`03-trace.json`。
 2. **Prompt 測試**：snapshot；**前綴穩定性測試**：不同 Feature 的 writer prompt 在 `<context>` 結尾之前完全相同；`<sources>` 只含該 Feature 的 SCN 引用的條目，不含任何 forbidden 條目。
 3. **端到端測試**：`ScriptedBackend` 依工具名稱選擇腳本，以 returns 的 fixture 執行：
@@ -427,19 +382,18 @@ distinct:
    - 某個 Feature 的 writer 失敗 → `@unwritten`、status `failed`，再以 `--only` 補寫
    - outline 最後一次交卷部分接受 → 未覆蓋清單
    - 上游沒收斂 → 警告；上游 failed → 拒絕，`--allow-failed-clarify` 放行
-   - Vocabulary 失敗 → 警告，以原始文字渲染
 4. **Eval 計分的單元測試**：用手寫的 Write Run fixture 驗證每一項指標。
 
 ## 7. 實作順序
 
 每一步單獨成一個 commit，而且 `pnpm test` 和 `pnpm typecheck` 都要通過。
 
-1. 文件：本計畫、CONTEXT.md 新增 Outline、Coverage、Derived Scenario、Scenario Review、Vocabulary Normalization、Vocabulary；新增 ADR 0015–0019。
+1. 文件：本計畫、CONTEXT.md 新增 Outline、Coverage、Derived Scenario、Scenario Review；新增 ADR 0015–0018（ADR 0019 的 Vocabulary Normalization 試行後已撤除）。
 2. `schema.ts`、`coverage.ts`，連同單元測試。
 3. `outline.ts`，連同單元測試。
 4. `writer.ts`，連同單元測試。
 5. `render.ts`，加入 `@cucumber/gherkin`，連同 golden 測試。
-6. `review.ts`、`vocabulary.ts`，連同單元測試。
+6. `review.ts`，連同單元測試。
 7. prompt 模板與 `prompts.ts`，連同 snapshot 測試與前綴穩定性測試。
 8. `stage.ts`，連同端到端測試。
 9. CLI、`--only`、config、README，並手動 smoke。
@@ -449,6 +403,6 @@ distinct:
 ## 8. 待議事項
 
 - **數值正規化的範圍**：§1.7 規則 4 只處理阿拉伯數字、全形數字與一到九十九的中文數字。單位換算（「一週」對「7 天」）會造成誤退回，先以 eval 的覆蓋退回數與重試次數觀察。
-- **跨 Feature 的 step 用語**：目前靠 Vocabulary Normalization 統一名詞，不統一句型。之後要接 Cucumber 的 step definition 時再考慮。
+- **跨 Feature 的 step 用語**：名詞靠 writer 共用的 `<context>` 維持一致（Vocabulary Normalization 已撤除，見 [ADR 0019](../adr/0019-vocabulary-normalization.md)），不統一句型。之後要接 Cucumber 的 step definition 時再考慮。
 - **Step 層級的 Feedback**：目前只到 SCN。
 - **串接 eval**：`--chain`，從 Extract 一路跑到 Write，量測整條流程。

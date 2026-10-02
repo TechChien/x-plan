@@ -131,12 +131,11 @@ pnpm dev write write-20261001-1100-9c0d1e --only FEAT-2 FEAT-3  # 在既有的 W
 
 上游必須是 `succeeded`，否則要加 `--allow-failed-clarify`。Clarify 以 `/done` 或達到 Round 上限結束時照常寫，還沒決定的題目會出現在文件裡，並印出警告。
 
-Write 分四步，每一步的產出都由程式檢查：
+Write 分三步，每一步的產出都由程式檢查：
 
 1. **Outline**：一個 agent 看整份 Aligned Brief，決定每個 Feature 底下有哪些 Rule 與情境，每個情境只有標題、種類和它依據的條目（[ADR 0015](docs/adr/0015-write-outline-then-feature-writers.md)）。程式檢查**覆蓋**：每個 Feature、Business Rule、Acceptance Criterion 和 Decision 都要有情境承接；被推翻的條目、沒有確認的假設不能引用（[ADR 0016](docs/adr/0016-coverage-checked-by-code.md)）。
 2. **Writer**：每個 Feature 一個 agent，只寫 outline 指定的情境的 Given / When / Then。它只看得到本 Feature 的情境所依據的條目，每一行都要標出依據；非推導情境中的數字必須出自它引用的條目。
 3. **Scenario Review**：另一個 agent 逐行檢查有沒有多寫、和依據相反、數字沒有出處、推導過頭或引用錯條目，有問題就退回 writer 重寫（[ADR 0018](docs/adr/0018-scenario-review.md)）。
-4. **用語統一**：全部寫完後，一個 agent 整理出用語表，把同一概念的不同說法換成同一個詞，替換由程式逐字執行並記錄（[ADR 0019](docs/adr/0019-vocabulary-normalization.md)）。這一步是試行，config 的 `stages.write.vocabulary.enabled` 設為 `false` 就不跑。
 
 `.feature` 的關鍵字一律用英文（`Feature`、`Rule`、`Scenario`、`Given`…），內容用輸出語言。每個情境上的 tag 說明它的來歷：
 
@@ -152,11 +151,11 @@ Write 分四步，每一步的產出都由程式檢查：
 
 規則沒給的值一律寫成 `<任一一般商品>` 這種佔位，不會編造。跑測試時可以用 `not @open and not @deferred and not @unwritten` 排除還沒定案的情境。
 
-某個 Feature 的 writer 失敗時，其他 Feature 照常寫出，Run 的狀態是 `failed`，最後會印出重寫的指令。`--only` 沿用原本的 outline 與情境 id，重寫的 prompt 帶入既有的用語表；重寫失敗時保留原本的版本。上游的 Aligned Brief 在這之間被改寫過時，拒絕重寫，要改開新的 Write Run。
+某個 Feature 的 writer 失敗時，其他 Feature 照常寫出，Run 的狀態是 `failed`，最後會印出重寫的指令。`--only` 沿用原本的 outline 與情境 id；重寫失敗時保留原本的版本。上游的 Aligned Brief 在這之間被改寫過時，拒絕重寫，要改開新的 Write Run。
 
 參數：`--out <dir>`（新 Write Run 的目錄）、`--only <FEAT-id...>`、`--allow-failed-clarify`、`--lang <en|zh|cn>`（預設沿用 Aligned Brief 的語言）、`--config <path>`。
 
-Review 與用語統一的 thinking 預設比 outline、writer 低一級，可用 `stages.write.review.thinking`、`stages.write.vocabulary.thinking` 調整；writer 同時執行的數量沿用 `concurrency`。
+Review 的 thinking 預設比 outline、writer 低一級，可用 `stages.write.review.thinking` 調整；writer 同時執行的數量沿用 `concurrency`。
 
 Write Run 的產出：
 
@@ -164,10 +163,9 @@ Write Run 的產出：
 |---|---|
 | `features/FEAT-*.feature` | Gherkin 需求文件，每個 Feature 一個檔；`FEAT-N1` 這類是 Clarify 中新增的功能 |
 | `03-spec.md` | 總覽：每個檔的情境數、Actor、Entity、NFR、限制、不做清單、取消與新增的 Feature、沒寫成情境的條目、未覆蓋的條目、未決題目、`@unverified` 與 `@unwritten` |
-| `03-vocabulary.md` / `.json` | 用語表，以及每一筆替換的前後文字 |
 | `03-outline.json` | Outline 與程式編好的情境 id |
 | `03-trace.json` | 每個情境、每一行、每一列 Examples 的依據，以及 Review 的紀錄 |
-| `03-written.json` | writer 寫的原文（替換前）；`--only` 以它為基礎 |
+| `03-written.json` | writer 的結果；`--only` 以它為基礎 |
 | `03-rejected.json` | 最後一次交卷仍沒通過檢查而被排除的部分 |
 | `run.json` | 上游 Clarify Run 的 id 與 Aligned Brief 的 sha、各角色的 thinking、prompt hash、每個 agent 的指標、每個 Feature 的狀態與寫入批次 |
 | `traces/write-*`、`prompts/write-*` | 每個 agent 的過程與實際送出的 prompt；`write-FEAT-1-review<k>` 是該 Feature 第 k 次 Review，`--only` 的紀錄帶批次後綴，不覆寫第一批 |
@@ -313,11 +311,8 @@ XPLAN_API_KEY=... pnpm eval --stage write [--cases returns] [--repeat 5]
 - `mustHaveScenarios`：文件必須有的情境。某個寫出的情境包含全部關鍵字，而且（有給 `sourceIds` 時）引用其中任一 id，就算命中；`derived: true` 只看推導出的內容（`@derived` 的情境或 Examples），用來量測邊界有沒有被推導出來。
 - `shouldNotAppear`：不該出現在任何情境的說法，通常是被推翻或被更正的值。關鍵字是子字串比對，「13 天」也會命中「3 天」。
 - `expectedOpen`：應該以 `@open` 或 `@deferred` 情境呈現的題目。
-- `vocabulary`：用語統一應該換掉的說法（`variants`）與標準用語；`distinct` 列出不同概念的詞，被替換成彼此就算錯誤合併。
 
-報告的指標：必要情境召回率、被推翻內容出現數、未決呈現率、outline 被退回的次數、Review 依判定分類的攔下數、`@unverified` / `@unwritten` / 未覆蓋數、情境數與 `@derived` 比例、notBehavioral 數、新 Feature 數、只引用 FEAT 的情境數（Clarify 該問而沒問的 gherkin-gap）、writer 降為 open 的數量、變體說法在用語統一前後的出現次數、錯誤合併數、替換與跳過數、詞條數、`.feature` 解析失敗數、交卷次數、writer 的 prefix cache 命中率、token 用量。必要情境召回與被推翻內容另外以 writer 的原文（用語統一前）各算一次，兩者有差距時，代表用語統一改壞了意思（[ADR 0019](docs/adr/0019-vocabulary-normalization.md)）。
-
-要比較有沒有用語統一，把 config 的 `stages.write.vocabulary.enabled` 設為 `false` 再跑一次。
+報告的指標：必要情境召回率、被推翻內容出現數、未決呈現率、outline 被退回的次數、Review 依判定分類的攔下數、`@unverified` / `@unwritten` / 未覆蓋數、情境數與 `@derived` 比例、notBehavioral 數、新 Feature 數、只引用 FEAT 的情境數（Clarify 該問而沒問的 gherkin-gap）、writer 降為 open 的數量、`.feature` 解析失敗數、交卷次數、writer 的 prefix cache 命中率、token 用量。
 
 ## 開發
 

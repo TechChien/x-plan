@@ -39,10 +39,6 @@ mustHaveScenarios:
 shouldNotAppear:
   - { id: old-window, any: ["3 天"] }
 expectedOpen: [OQ-1, OQ-4]
-vocabulary:
-  - { canonical: 會員, variants: [使用者] }
-distinct:
-  - [會員, 系統]
 `;
 
 /** A case over the test fixture, run once with the scripted model the Write e2e tests use. */
@@ -69,9 +65,7 @@ describe("runWriteEval", () => {
     expect(result.status).toBe("succeeded");
     expect(result.score).toMatchObject({
       mustHave: { hit: ["same-day", "vip-10", "day-8", "response-time"], missed: ["never-written"] },
-      mustHaveBefore: { hit: ["same-day", "vip-10", "day-8", "response-time"], missed: ["never-written"] },
       stale: [],
-      staleBefore: 0,
       open: { shown: ["OQ-1", "OQ-4"], missed: [] },
       outlineRejections: 0,
       review: { unsupported: 0, contradicts: 0, "invented-value": 0, underived: 0, misattributed: 0 },
@@ -84,32 +78,24 @@ describe("runWriteEval", () => {
       newFeatures: 0,
       featureOnly: 0,
       downgraded: 0,
-      vocabulary: { variantsBefore: 1, variantsAfter: 0, wrongMerges: [], replacements: 1, skipped: 0, entries: 1 },
       invalidFiles: [],
     });
     expect(result.metrics.submitAttempts).toBeGreaterThan(0);
   });
 
-  test("finds stale wording, wrong merges, what is missing from derived content, and what normalization lost", async () => {
+  test("finds stale wording and what is missing from derived content", async () => {
     const result = await evaluated();
     const labels = loadWriteCase(join(result.runDir, "..", "..", "..", "fixture", "write", "expected.yaml"));
     const artifacts = readArtifacts(result.runDir, [])!;
-    artifacts.after.scenarios[0]!.steps[0]!.text += "，下單 3 天內";
-    artifacts.vocabulary!.applied.push({ loc: "SCN-1/step/2", from: "系統", to: "會員", count: 1, before: "", after: "" });
-    const score = scoreWrite(
-      { ...labels, mustHaveScenarios: [{ id: "same-day-derived", all: ["下單當天"], derived: true }, { id: "user-wording", all: ["使用者"] }] },
-      artifacts,
-    );
+    artifacts.trace.scenarios[0]!.steps[0]!.text += "，下單 3 天內";
+    const score = scoreWrite({ ...labels, mustHaveScenarios: [{ id: "same-day-derived", all: ["下單當天"], derived: true }] }, artifacts);
     expect(score.stale).toEqual([{ id: "old-window", scenario: "SCN-1" }]);
-    expect(score.staleBefore).toBe(0);
-    expect(score.vocabulary.wrongMerges).toEqual([{ loc: "SCN-1/step/2", from: "系統", to: "會員" }]);
-    expect(score.mustHave.missed).toEqual(["same-day-derived", "user-wording"]);
-    expect(score.mustHaveBefore.hit).toEqual(["user-wording"]);
+    expect(score.mustHave.missed).toEqual(["same-day-derived"]);
   });
 
   test("the report sums each case and lists what each run missed", async () => {
     const report = renderWriteReport([await evaluated()]);
-    expect(report).toMatch(/^\| fixture \| 1\/1 \| 80% \(80%\) \| 0 \(0\) \| 100% \| 0 \| 0\/0\/0\/0\/0 \|/m);
+    expect(report).toMatch(/^\| fixture \| 1\/1 \| 80% \| 0 \| 100% \| 0 \| 0\/0\/0\/0\/0 \|/m);
     expect(report).toContain("- 缺少的必要情境：never-written");
     expect(report).toContain("## Prompt 版本");
   });

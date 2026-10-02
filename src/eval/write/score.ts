@@ -1,19 +1,15 @@
 import { normalize } from "../../extract/evidence.ts";
-import { buildTrace, gherkinErrors, type TracedScenario, type WriteTrace } from "../../write/render.ts";
+import { gherkinErrors, type TracedScenario, type WriteTrace } from "../../write/render.ts";
 import type { ScenarioReviewRecord, ScenarioReviewVerdict } from "../../write/review.ts";
-import type { WriteOutline, WrittenFeature } from "../../write/schema.ts";
-import type { AppliedReplacement } from "../../write/vocabulary.ts";
+import type { WriteOutline } from "../../write/schema.ts";
 import type { WriteCase } from "./cases.ts";
 
 /** What a Write Run left on disk that the score reads. */
 export interface WriteArtifacts {
   outline: WriteOutline;
-  /** `03-written.json`: the writers' wording, before Vocabulary Normalization. */
-  before: Map<string, WrittenFeature>;
-  /** `03-trace.json`: the wording as rendered. */
-  after: WriteTrace;
+  /** `03-trace.json`: the scenarios as rendered. */
+  trace: WriteTrace;
   reviews: Record<string, ScenarioReviewRecord[]>;
-  vocabulary?: { entries: unknown[]; applied: AppliedReplacement[]; skipped: unknown[] };
   /** `features/<id>.feature` texts. */
   featureFiles: Record<string, string>;
   /** `run.json` agents, for the outline's refused submissions. */
@@ -21,12 +17,10 @@ export interface WriteArtifacts {
 }
 
 export interface WriteScore {
-  /** `mustHaveScenarios` labels found in the rendered document, and in the writers' own wording. */
+  /** `mustHaveScenarios` labels found in the rendered document. */
   mustHave: { hit: string[]; missed: string[] };
-  mustHaveBefore: { hit: string[]; missed: string[] };
   /** `shouldNotAppear` hits in the rendered document, as label and scenario. */
   stale: { id: string; scenario: string }[];
-  staleBefore: number;
   /** `expectedOpen` items shown as an @open or @deferred scenario. */
   open: { shown: string[]; missed: string[] };
   /** Outline submissions the coverage and citation checks refused. */
@@ -45,7 +39,6 @@ export interface WriteScore {
   featureOnly: number;
   /** Scenarios a writer turned open because the outline gave too little. */
   downgraded: number;
-  vocabulary: { variantsBefore: number; variantsAfter: number; wrongMerges: { loc: string; from: string; to: string }[]; replacements: number; skipped: number; entries: number };
   /** `.feature` files that do not parse; always empty unless rendering has a bug. */
   invalidFiles: string[];
 }
@@ -83,18 +76,8 @@ function stale(labels: WriteCase["shouldNotAppear"], scenarios: TracedScenario[]
   );
 }
 
-/** How often the variants occur in steps, Background and Examples cells: where the reader meets them. */
-function variantCount(variants: string[], trace: WriteTrace): number {
-  const texts = [
-    ...trace.features.flatMap((f) => f.background.map((st) => st.text)),
-    ...trace.scenarios.flatMap((s) => [...s.steps.flatMap((st) => [st.text, ...(st.dataTable?.flat() ?? [])]), ...s.examples.flatMap((e) => e.rows.flatMap((r) => r.cells))]),
-  ].map(norm);
-  return variants.reduce((n, v) => n + texts.reduce((k, t) => k + t.split(norm(v)).length - 1, 0), 0);
-}
-
 export function scoreWrite(labels: WriteCase, a: WriteArtifacts): WriteScore {
-  const before = buildTrace(a.outline, a.before);
-  const after = a.after.scenarios;
+  const after = a.trace.scenarios;
   const written = after.filter((s) => s.status === "written");
   const planned = new Map(a.outline.scenarios.map((s) => [s.id, s]));
 
@@ -102,16 +85,10 @@ export function scoreWrite(labels: WriteCase, a: WriteArtifacts): WriteScore {
   for (const records of Object.values(a.reviews)) for (const r of records) for (const v of r.verdicts) review[v]++;
 
   const shownOpen = new Set(after.filter((s) => s.kind === "open" || s.kind === "deferred").flatMap((s) => s.agendaIds));
-  const variants = (labels.vocabulary ?? []).flatMap((v) => v.variants);
-  const wrongMerges = (a.vocabulary?.applied ?? [])
-    .filter((r) => (labels.distinct ?? []).some((group) => group.some((x) => r.from.includes(x) && group.some((y) => y !== x && r.to.includes(y)))))
-    .map(({ loc, from, to }) => ({ loc, from, to }));
 
   return {
     mustHave: mustHave(labels.mustHaveScenarios, after),
-    mustHaveBefore: mustHave(labels.mustHaveScenarios, before.scenarios),
     stale: stale(labels.shouldNotAppear, after),
-    staleBefore: stale(labels.shouldNotAppear, before.scenarios).length,
     open: {
       shown: (labels.expectedOpen ?? []).filter((id) => shownOpen.has(id)),
       missed: (labels.expectedOpen ?? []).filter((id) => !shownOpen.has(id)),
@@ -128,14 +105,6 @@ export function scoreWrite(labels: WriteCase, a: WriteArtifacts): WriteScore {
     // Open and deferred skeletons naturally cite only their Feature; a specified one doing so restates the Feature.
     featureOnly: a.outline.scenarios.filter((s) => (s.kind === "specified" || s.kind === "derived") && s.effectiveSourceIds.every((id) => id.startsWith("FEAT-"))).length,
     downgraded: written.filter((s) => s.kind === "open" && ["specified", "derived"].includes(planned.get(s.id)?.kind ?? "")).length,
-    vocabulary: {
-      variantsBefore: variantCount(variants, before),
-      variantsAfter: variantCount(variants, a.after),
-      wrongMerges,
-      replacements: a.vocabulary?.applied.length ?? 0,
-      skipped: a.vocabulary?.skipped.length ?? 0,
-      entries: a.vocabulary?.entries.length ?? 0,
-    },
     invalidFiles: Object.entries(a.featureFiles).filter(([, text]) => gherkinErrors(text).length).map(([id]) => id),
   };
 }

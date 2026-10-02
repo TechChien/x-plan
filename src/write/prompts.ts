@@ -7,13 +7,9 @@ import type { BuiltPrompt } from "../shared/run-files.ts";
 import { citationError, contextIds, type CoverageSets } from "./coverage.ts";
 import { factView, sourcesView } from "./items.ts";
 import { reviewToYaml, type ReviewUnit } from "./review.ts";
-import type { WriteOutline, WrittenFeature } from "./schema.ts";
-import { vocabularyLocations, type VocabularyEntry } from "./vocabulary.ts";
+import type { WriteOutline } from "./schema.ts";
 
 const yaml = (value: unknown) => stringify(value, { lineWidth: 0 }).trimEnd();
-
-/** An optional block: absent entirely when there is nothing to put in it, so the messages around it do not change. */
-const optionalBlock = (tag: string, value: unknown[] | undefined) => (value?.length ? `\n<${tag}>\n${yaml(value)}\n</${tag}>\n` : "");
 
 export function buildOutlinePrompt(lib: PromptLibrary, aligned: AlignedBrief, sets: CoverageSets): BuiltPrompt {
   return {
@@ -80,13 +76,11 @@ export function buildWriterPrompt(
   sets: CoverageSets,
   outline: WriteOutline,
   featureId: string,
-  opts: { vocabulary?: VocabularyEntry[] } = {},
 ): BuiltPrompt {
   return {
     systemPrompt: lib.render("write/writer.system", { outputLanguage: LANGUAGE_NAMES[aligned.outputLanguage] }),
     userMessage: lib.render("write/writer.user", {
       context: contextToYaml(aligned, sets, outline),
-      vocabulary: optionalBlock("vocabulary", opts.vocabulary?.map(({ canonical, definition, avoid }) => ({ canonical, definition, ...(avoid.length ? { avoid } : {}) }))),
       feature: featureToYaml(outline, featureId),
       sources: sourcesToYaml(aligned, sets, outline, featureId),
     }),
@@ -142,31 +136,5 @@ export function buildReviewPrompt(lib: PromptLibrary, aligned: AlignedBrief, uni
   return {
     systemPrompt: lib.render("write/review.system", {}),
     userMessage: lib.render("write/review.user", { review: reviewToYaml(aligned, units).trimEnd() }),
-  };
-}
-
-export function buildVocabularyPrompt(
-  lib: PromptLibrary,
-  aligned: AlignedBrief,
-  outline: WriteOutline,
-  written: Map<string, WrittenFeature>,
-  opts: { existing?: VocabularyEntry[]; featureIds?: Set<string> } = {},
-): BuiltPrompt {
-  const decisions = new Map(aligned.decisions.map((d) => [d.id, d]));
-  const { brief } = aligned;
-  const named = [...brief.glossary, ...brief.actors, ...brief.domainEntities, ...brief.dependencies] as unknown as Record<string, unknown>[];
-  const names = named.map((item) => {
-    const by = aligned.supersededBy[item.id as string];
-    return { ...factView(item), ...(by ? { redefinedBy: by.map((id) => ({ id, conclusion: decisions.get(id)?.conclusion ?? "" })) } : {}) };
-  });
-  const active = aligned.decisions.filter((d) => d.status === "active").map((d) => ({ id: d.id, conclusion: d.conclusion, answer: d.answerText }));
-  return {
-    systemPrompt: lib.render("write/vocabulary.system", { outputLanguage: LANGUAGE_NAMES[aligned.outputLanguage] }),
-    userMessage: lib.render("write/vocabulary.user", {
-      names: names.length ? yaml(names) : "[]",
-      decisions: active.length ? yaml(active) : "[]",
-      existing: optionalBlock("existing", opts.existing),
-      text: yaml(Object.fromEntries(vocabularyLocations(outline, written, opts.featureIds))),
-    }),
   };
 }

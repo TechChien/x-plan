@@ -134,13 +134,13 @@ export function writtenFixture(aligned = alignedFixture(), outline = outlineFixt
   return new Map([["FEAT-1", result.accepted]]);
 }
 
-/** FEAT-2: SCN-5 specified (AC-1, DEC-6, BR-3), SCN-6 open (OQ-4), SCN-7 specified (NFR-1). "使用者" is for the vocabulary. */
+/** FEAT-2: SCN-5 specified (AC-1, DEC-6, BR-3), SCN-6 open (OQ-4), SCN-7 specified (NFR-1). */
 export function feature2(): FeatureSubmission {
   return {
     description: "會員可以申請退貨",
     background: [],
     scenarios: [
-      { id: "SCN-5", steps: [step("Given", "使用者的商品到貨第 2 天", ["AC-1"]), step("When", "會員申請退貨", ["FEAT-2"]), step("Then", "系統接受退貨", ["AC-1"])], examples: [] },
+      { id: "SCN-5", steps: [step("Given", "會員的商品到貨第 2 天", ["AC-1"]), step("When", "會員申請退貨", ["FEAT-2"]), step("Then", "系統接受退貨", ["AC-1"])], examples: [] },
       { id: "SCN-6", steps: [step("Given", "會員有一筆退貨", ["FEAT-2"])], examples: [] },
       { id: "SCN-7", steps: [step("When", "會員送出退貨申請", ["FEAT-2"]), step("Then", "系統在 2 秒內回應", ["NFR-1"])], examples: [] },
     ],
@@ -161,9 +161,6 @@ export function reviewFrom(prompt: string, flag?: { unit: string; ref: string })
 }
 export const approving: ScriptedTurn = { respond: (p) => reviewFrom(p) };
 export const flagging = (unit: string, ref: string): ScriptedTurn => ({ respond: (p) => reviewFrom(p, { unit, ref }) });
-export const vocabularyCall: ScriptedTurn = {
-  call: { entries: [{ canonical: "會員", definition: "在平台註冊的購買者", avoid: ["使用者"], sourceIds: ["ACT-1"] }], replacements: [{ loc: "SCN-5/step/0", from: "使用者", to: "會員" }] },
-};
 
 export interface WriteScripts {
   outline?: ScriptedTurn[];
@@ -171,7 +168,6 @@ export interface WriteScripts {
   writers?: ScriptedTurn[][];
   /** Review sessions in the order they start. */
   reviews?: ScriptedTurn[][];
-  vocabulary?: ScriptedTurn[];
 }
 
 export function writeBackend(s: WriteScripts = {}): ScriptedBackend & { tools: string[] } {
@@ -186,8 +182,6 @@ export function writeBackend(s: WriteScripts = {}): ScriptedBackend & { tools: s
         return queue.writers.shift() ?? [];
       case "submit_review":
         return queue.reviews.shift() ?? [approving];
-      case "submit_vocabulary":
-        return s.vocabulary ?? [vocabularyCall];
       default:
         return [];
     }

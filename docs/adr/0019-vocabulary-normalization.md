@@ -1,4 +1,21 @@
-# 全部 Feature 寫完後，以 Vocabulary Normalization 統一用語
+# 全部 Feature 寫完後，以 Vocabulary Normalization 統一用語（已撤除）
+
+## 撤除（2026-10-02）
+
+試行後撤除。以 write-20261002-1446-431b69（2 個 Feature、51 個情境）為例：
+
+- 108 筆替換幾乎都是把「tenant」補成「Admin tenant」這類改寫，沒有一筆修正了讀者會誤解的用語。writer 已經從 `<context>` 拿到 Actor、Term、Domain Entity 的原名，各 Feature 之間的用語差異本來就小。
+- 它是整個 Run 最慢的 agent：216 秒，輸出 24k token，其中 20k 是 reasoning。
+- 它帶來的風險要靠越來越多程式規則擋下：引號、反引號、glossary 的 term 與 alias、英文冠詞。Glossary 把伺服器端欄位 `device_count` 記成 payload 欄位 `dcnt` 的 alias，Vocabulary 便把它列為要避免的說法。替換後的文字不經 Scenario Review，有時反而變差，例如「the per Admin tenant aggregation」。
+
+效益低於成本與風險。用語一致改由 writer 共用的 `<context>` 維持。之後跨 Feature 的用語分歧若成為實際問題，優先在 writer prompt 加規則，或由程式檢查 `<context>` 名稱的變體，不再加一個改寫文字的 agent。
+
+一併移除：`03-vocabulary.md` / `.json`、`stages.write.vocabulary` 設定（舊 config 中的這個欄位會被忽略）、`--only` 重寫時 writer prompt 的 `<vocabulary>`，以及 eval 的用語一致性、錯誤合併、統一前後比較等指標與 `expected.yaml` 的 `vocabulary`、`distinct`。
+
+以下是原本的決定，保留作為紀錄。
+
+## 原本的決定
+
 
 每個 Feature 的 writer 平行執行、看不到彼此的 steps（ADR 0015），同一件事可能在 FEAT-1 寫「會員已登入」，在 FEAT-2 寫「使用者登入系統」。這份文件是 PM、R&D、QA 討論的共同基礎，同一個概念有三種說法，討論時就會出現「使用者和會員是不是同一種人」這類不必要的問題。
 

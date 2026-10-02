@@ -1,7 +1,7 @@
 description: >
   電商退貨與取消（Write）。aligned.json 是手寫的暫定 fixture：returns 的 Brief 加上 clarify/answers.yaml 預期產生的
   Decision，之後換成真實 Clarify Run 經人工審過的版本。量測：每條規則與 Decision 是否都寫成情境、被推翻的 3 天與
-  被更正的「運費一律由平台吸收」不出現、取消期限的邊界是否推導出來、延後與未決的題目是否以骨架呈現，以及用語統一。
+  被更正的「運費一律由平台吸收」不出現、取消期限的邊界是否推導出來、延後與未決的題目是否以骨架呈現。
 
 mustHaveScenarios:
   # 原文與 Decision 明說的
@@ -25,13 +25,3 @@ shouldNotAppear:
   - { id: revised-fee, any: ["一律由平台"], reason: "DEC-9 已被 DEC-10 更正" }
 
 expectedOpen: [FQ-4, FQ-5]
-
-vocabulary:
-  - canonical: 會員
-    variants: [使用者, 用戶, 顧客, 消費者, 買家]
-  - canonical: 客服人員
-    variants: [客服專員, 審核人員]
-
-distinct:
-  - [會員, 客服人員]
-  - [會員, 平台]

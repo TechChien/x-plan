@@ -36,13 +36,13 @@ const readJson = <T>(path: string): T => JSON.parse(readFileSync(path, "utf8")) 
 const read = (path: string) => readFileSync(path, "utf8");
 
 describe("runWrite", () => {
-  test("plans, writes, reviews and normalizes, then renders every file", async () => {
+  test("plans, writes and reviews, then renders every file", async () => {
     const d = dirs({ termination: "converged" });
     const b = backend();
     const report = await runWrite(options(d, b));
 
     expect(report).toMatchObject({ status: "succeeded", failures: [], unwritten: [] });
-    expect(b.tools).toEqual(["submit_outline", "submit_feature", "submit_review", "submit_feature", "submit_review", "submit_vocabulary"]);
+    expect(b.tools).toEqual(["submit_outline", "submit_feature", "submit_review", "submit_feature", "submit_review"]);
 
     for (const id of ["FEAT-1", "FEAT-2"]) expect(gherkinErrors(read(join(d.write, "features", `${id}.feature`)))).toEqual([]);
     const feat2 = read(join(d.write, "features", "FEAT-2.feature"));
@@ -50,10 +50,8 @@ describe("runWrite", () => {
     expect(feat2).toContain("Then <待決 OQ-4：退貨頁面要顯示什麼？>");
     expect(read(join(d.write, "features", "FEAT-1.feature"))).toContain("Then <延後 OQ-1：已出貨的訂單如何處理？>");
 
-    // The writers' own wording is kept for a rewrite; the replacement is recorded with both texts.
-    expect(readJson<{ features: Record<string, FeatureSubmission> }>(join(d.write, "03-written.json")).features["FEAT-2"]!.scenarios[0]!.steps[0]!.text).toBe("使用者的商品到貨第 2 天");
-    expect(readJson<{ applied: unknown[] }>(join(d.write, "03-vocabulary.json")).applied).toEqual([expect.objectContaining({ loc: "SCN-5/step/0", before: "使用者的商品到貨第 2 天", after: "會員的商品到貨第 2 天" })]);
-    expect(read(join(d.write, "03-vocabulary.md"))).toContain("**會員**:");
+    // The writers' results are kept for a rewrite.
+    expect(readJson<{ features: Record<string, FeatureSubmission> }>(join(d.write, "03-written.json")).features["FEAT-2"]!.scenarios[0]!.steps[0]!.text).toBe("會員的商品到貨第 2 天");
 
     expect(readJson<WriteOutline>(join(d.write, "03-outline.json")).scenarios).toHaveLength(7);
     expect(read(join(d.write, "03-spec.md"))).toContain("| [FEAT-2.feature](features/FEAT-2.feature) | 申請退貨 | 3 | 1 | 0 | 0 | 0 | 0 |");
@@ -68,11 +66,11 @@ describe("runWrite", () => {
       outputLanguage: "zh",
       source: { kind: "run", stage: "clarify", runId: "clarify-20261001-1000-aaaaaa", file: "02-aligned.json" },
       features: { "FEAT-1": { status: "written", batch: "initial", unwritten: [] }, "FEAT-2": { status: "written", batch: "initial", unwritten: [] } },
-      thinking: { outline: "medium", writer: "medium", review: "low", vocabulary: "low" },
+      thinking: { outline: "medium", writer: "medium", review: "low" },
     });
     expect(run.source.sha256).toMatch(/^[0-9a-f]{64}$/);
-    expect(run.agents.map((a: { label: string }) => a.label)).toEqual(["write-outline", "write-FEAT-1-review1", "write-FEAT-1", "write-FEAT-2-review1", "write-FEAT-2", "write-vocabulary"]);
-    for (const label of ["write-outline", "write-FEAT-1", "write-FEAT-1-review1", "write-vocabulary"]) {
+    expect(run.agents.map((a: { label: string }) => a.label)).toEqual(["write-outline", "write-FEAT-1-review1", "write-FEAT-1", "write-FEAT-2-review1", "write-FEAT-2"]);
+    for (const label of ["write-outline", "write-FEAT-1", "write-FEAT-1-review1"]) {
       expect(existsSync(join(d.write, "prompts", `${label}.user.md`))).toBe(true);
       expect(existsSync(join(d.write, "traces", `${label}.md`))).toBe(true);
     }
@@ -123,14 +121,10 @@ describe("runWrite", () => {
     const b = backend({ writers: [[{ call: feature2() }]] });
     const second = await runWrite(options(d, b, { sourceRunDir: undefined, only: ["FEAT-2"], now: () => new Date(2026, 9, 1, 12, 0, 0) }));
     expect(second).toMatchObject({ status: "succeeded", failures: [], unwritten: [] });
-    expect(b.tools).toEqual(["submit_feature", "submit_review", "submit_vocabulary"]);
+    expect(b.tools).toEqual(["submit_feature", "submit_review"]);
     expect(read(join(d.write, "features", "FEAT-2.feature"))).toContain("Given 會員的商品到貨第 2 天");
     expect(read(join(d.write, "features", "FEAT-1.feature"))).toBe(feat1);
 
-    // The rewrite's vocabulary pass sees only FEAT-2's text and the entries chosen before, if any.
-    const vocabularyPrompt = b.sessions.find((s) => s.systemPrompt.includes("consistent"))!.prompts[0]!;
-    expect(vocabularyPrompt).toContain("SCN-5/step/0");
-    expect(vocabularyPrompt).not.toContain("SCN-1/");
     const run = readJson<Record<string, any>>(join(d.write, "run.json"));
     expect(run.features).toMatchObject({ "FEAT-1": { batch: "initial" }, "FEAT-2": { status: "written", batch: "only-20261001-120000" } });
     // Its prompts and traces sit beside the first batch's instead of replacing them.
@@ -138,14 +132,13 @@ describe("runWrite", () => {
     expect(existsSync(join(d.write, "traces", "write-FEAT-2-only-20261001-120000.md"))).toBe(true);
   });
 
-  test("a rewrite gets the Vocabulary chosen before, and a failed rewrite keeps the earlier version", async () => {
+  test("a failed rewrite keeps the earlier version", async () => {
     const d = dirs();
     await runWrite(options(d, backend()));
     const before = read(join(d.write, "features", "FEAT-1.feature"));
 
     const b = backend({ writers: [[{ text: "…" }, { text: "…" }, { text: "…" }]] });
     const report = await runWrite(options(d, b, { sourceRunDir: undefined, only: ["FEAT-1"] }));
-    expect(b.sessions[0]!.prompts[0]).toContain("<vocabulary>\n- canonical: 會員");
     expect(report.status).toBe("succeeded");
     expect(report.warnings.at(-1)).toMatch(/write-FEAT-1-only-\d{8}-\d{6} failed .*FEAT-1 keeps what batch initial wrote/);
     expect(read(join(d.write, "features", "FEAT-1.feature"))).toBe(before);
@@ -166,20 +159,6 @@ describe("runWrite", () => {
     expect(read(join(d.write, "03-spec.md"))).toMatch(/## Uncovered\n\n- \*\*DEC-5\*\* VIP 10 天內可取消/);
   });
 
-  test("Vocabulary Normalization failing keeps the writers' wording; disabled, it does not run", async () => {
-    const d = dirs();
-    const report = await runWrite(options(d, backend({ vocabulary: [{ text: "…" }, { text: "…" }, { text: "…" }] })));
-    expect(report.status).toBe("succeeded");
-    expect(report.warnings).toContainEqual(expect.stringMatching(/^write-vocabulary failed .*the writers' wording is kept$/));
-    expect(read(join(d.write, "features", "FEAT-2.feature"))).toContain("Given 使用者的商品到貨第 2 天");
-
-    const off = dirs();
-    const b = backend();
-    await runWrite(options(off, b, { config: parseConfig({ provider: { baseUrl: "http://unused" }, concurrency: 1, stages: { write: { vocabulary: { enabled: false } } } }) }));
-    expect(b.tools).not.toContain("submit_vocabulary");
-    expect(read(join(off.write, "03-spec.md"))).toContain("_Not normalized._");
-    expect(existsSync(join(off.write, "03-vocabulary.json"))).toBe(false);
-  });
 
   describe("the upstream Clarify Run", () => {
     test("a failed one is refused unless allowed", async () => {

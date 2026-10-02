@@ -8,8 +8,7 @@
   },
   "thinking": "medium",
   "stages": {
-    "extract": { "thinking": "high" },
-    "write": { "vocabulary": { "enabled": true } }
+    "extract": { "thinking": "high" }
   },
   "concurrency": 2,
   "telemetry": { "enabled": false, "captureContent": false },

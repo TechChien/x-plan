@@ -19,7 +19,7 @@ export interface FeatureRenderContext {
   language: OutputLanguage;
 }
 
-/** One `.feature` file (plan §1.10): English keywords, content in the output language, tags in a fixed order. */
+/** One `.feature` file (plan §1.9): English keywords, content in the output language, tags in a fixed order. */
 export function renderFeature(feature: PlannedFeature, ctx: FeatureRenderContext): string {
   const labels = LABELS[ctx.language];
   const byId = new Map(ctx.outline.scenarios.map((s) => [s.id, s]));
@@ -187,8 +187,6 @@ export interface SpecRenderContext {
   aligned: AlignedBrief;
   outline: WriteOutline;
   written: Map<string, WrittenFeature>;
-  /** Vocabulary Normalization produced `03-vocabulary.md`. */
-  hasVocabulary: boolean;
 }
 
 /** `03-spec.md`: what the `.feature` files cannot hold, and every place the reader should look at first. */
@@ -237,7 +235,6 @@ export function renderSpec(ctx: SpecRenderContext): string {
     "Features added in Clarify",
     outline.features.filter((f) => f.isNew).map((f) => `- **${f.id}** ${f.name} — ${f.sourceIds.map((id) => `${id}: ${decisions.get(id)?.conclusion ?? ""}`).join("; ")}`),
   );
-  section("Vocabulary", [ctx.hasVocabulary ? "See [03-vocabulary.md](03-vocabulary.md)." : "_Not normalized._"]);
 
   section("Not written as scenarios", outline.notBehavioral.map((n) => `- **${n.id}** ${describe(aligned, n.id)} — ${n.reason}`));
   section("Uncovered", outline.uncovered.map((id) => `- **${id}** ${describe(aligned, id)}`));

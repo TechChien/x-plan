@@ -5,9 +5,8 @@ import type { AlignedBrief } from "../../clarify/aligned.ts";
 import type { XPlanConfig } from "../../config.ts";
 import type { WriteTrace } from "../../write/render.ts";
 import type { ScenarioReviewRecord } from "../../write/review.ts";
-import type { WriteOutline, WrittenFeature } from "../../write/schema.ts";
+import type { WriteOutline } from "../../write/schema.ts";
 import { runWrite } from "../../write/stage.ts";
-import type { AppliedReplacement } from "../../write/vocabulary.ts";
 import { loadWriteCase } from "./cases.ts";
 import { scoreWrite, type WriteArtifacts, type WriteScore } from "./score.ts";
 
@@ -105,10 +104,8 @@ export function readArtifacts(runDir: string, agents: AgentJson[]): WriteArtifac
   const featuresDir = file("features");
   return {
     outline: json<WriteOutline>("03-outline.json"),
-    before: new Map(Object.entries(json<{ features: Record<string, WrittenFeature> }>("03-written.json").features)),
-    after: trace,
+    trace,
     reviews: trace.reviews ?? {},
-    ...(existsSync(file("03-vocabulary.json")) ? { vocabulary: json<{ entries: unknown[]; applied: AppliedReplacement[]; skipped: unknown[] }>("03-vocabulary.json") } : {}),
     featureFiles: existsSync(featuresDir)
       ? Object.fromEntries(readdirSync(featuresDir).filter((f) => f.endsWith(".feature")).map((f) => [f.replace(/\.feature$/, ""), readFileSync(join(featuresDir, f), "utf8")]))
       : {},
@@ -141,8 +138,8 @@ export function renderWriteReport(results: WriteRunResult[]): string {
   out.push(
     "## 總覽",
     "",
-    "| case | 成功 | 必要情境召回 (統一前) | 被推翻內容 (統一前) | 未決呈現 | 覆蓋退回 | Review 攔下 (多寫/相反/無出處數值/推導過頭/引錯) | @unverified | @unwritten | 未覆蓋 | 情境數 | @derived | notBehavioral | 新 Feature | 只引用 FEAT | 降為 open | 變體說法 統一前→後 | 錯誤合併 | 替換 (跳過) | 詞條 | 解析失敗 | 交卷 (check 錯) | writer cache | tokens in/out |",
-    "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+    "| case | 成功 | 必要情境召回 | 被推翻內容 | 未決呈現 | 覆蓋退回 | Review 攔下 (多寫/相反/無出處數值/推導過頭/引錯) | @unverified | @unwritten | 未覆蓋 | 情境數 | @derived | notBehavioral | 新 Feature | 只引用 FEAT | 降為 open | 解析失敗 | 交卷 (check 錯) | writer cache | tokens in/out |",
+    "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
   );
   for (const name of cases) {
     const rs = results.filter((r) => r.caseName === name);
@@ -153,8 +150,8 @@ export function renderWriteReport(results: WriteRunResult[]): string {
     const cells = [
       name,
       `${rs.filter((r) => r.status === "succeeded").length}/${rs.length}`,
-      `${pct(sum((x) => x.mustHave.hit.length), sum((x) => x.mustHave.hit.length + x.mustHave.missed.length))} (${pct(sum((x) => x.mustHaveBefore.hit.length), sum((x) => x.mustHaveBefore.hit.length + x.mustHaveBefore.missed.length))})`,
-      `${sum((x) => x.stale.length)} (${sum((x) => x.staleBefore)})`,
+      pct(sum((x) => x.mustHave.hit.length), sum((x) => x.mustHave.hit.length + x.mustHave.missed.length)),
+      String(sum((x) => x.stale.length)),
       pct(sum((x) => x.open.shown.length), sum((x) => x.open.shown.length + x.open.missed.length)),
       String(sum((x) => x.outlineRejections)),
       ["unsupported", "contradicts", "invented-value", "underived", "misattributed"].map((v) => sum((x) => x.review[v as keyof WriteScore["review"]])).join("/"),
@@ -167,10 +164,6 @@ export function renderWriteReport(results: WriteRunResult[]): string {
       String(sum((x) => x.newFeatures)),
       String(sum((x) => x.featureOnly)),
       String(sum((x) => x.downgraded)),
-      `${sum((x) => x.vocabulary.variantsBefore)}→${sum((x) => x.vocabulary.variantsAfter)}`,
-      String(sum((x) => x.vocabulary.wrongMerges.length)),
-      `${sum((x) => x.vocabulary.replacements)} (${sum((x) => x.vocabulary.skipped)})`,
-      String(mean((x) => x.vocabulary.entries)),
       String(sum((x) => x.invalidFiles.length)),
       `${m((x) => x.submitAttempts)} (${m((x) => x.checkFailures)})`,
       String(m((x) => x.writerCacheReadRatio)),
@@ -180,7 +173,7 @@ export function renderWriteReport(results: WriteRunResult[]): string {
   }
   out.push(
     "",
-    "_比例為所有執行合計，情境數、詞條數與執行指標為平均，其餘為合計。括號中的「統一前」是 writer 原本的文字，用來看用語統一有沒有改壞意思（ADR 0019）。被推翻內容、覆蓋退回、Review 攔下、錯誤合併越低越好；只引用 FEAT 是 Clarify 該問而沒問的 gherkin-gap；writer cache 不含第一個 writer。_",
+    "_比例為所有執行合計，情境數與執行指標為平均，其餘為合計。被推翻內容、覆蓋退回、Review 攔下越低越好；只引用 FEAT 是 Clarify 該問而沒問的 gherkin-gap；writer cache 不含第一個 writer。_",
     "",
     "## 明細",
     "",
@@ -191,11 +184,8 @@ export function renderWriteReport(results: WriteRunResult[]): string {
     const s = r.score;
     if (s) {
       if (s.mustHave.missed.length) out.push(`- 缺少的必要情境：${s.mustHave.missed.join(", ")}`);
-      const lostByVocabulary = s.mustHaveBefore.hit.filter((id) => s.mustHave.missed.includes(id));
-      if (lostByVocabulary.length) out.push(`- 用語統一後才缺少的：${lostByVocabulary.join(", ")}`);
       for (const x of s.stale) out.push(`- 被推翻內容 [${x.id}] 出現在 ${x.scenario}`);
       if (s.open.missed.length) out.push(`- 未以 @open / @deferred 呈現：${s.open.missed.join(", ")}`);
-      for (const w of s.vocabulary.wrongMerges) out.push(`- 錯誤合併 ${w.loc}：「${w.from}」→「${w.to}」`);
       if (s.invalidFiles.length) out.push(`- 解析失敗：${s.invalidFiles.join(", ")}`);
     }
     out.push("");

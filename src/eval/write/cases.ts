@@ -22,10 +22,6 @@ export const WriteCaseSchema = Type.Object({
   shouldNotAppear: Type.Optional(Type.Array(Type.Object({ id: Type.String(), any: Keywords, reason: Type.Optional(Type.String()) }))),
   /** Agenda Items that should appear as an @open or @deferred scenario. */
   expectedOpen: Type.Optional(Type.Array(Type.String())),
-  /** Wordings Vocabulary Normalization should replace by the canonical term (ADR 0019). */
-  vocabulary: Type.Optional(Type.Array(Type.Object({ canonical: Type.String(), variants: Keywords }))),
-  /** Terms that name different concepts: a replacement of one by another is a wrong merge. */
-  distinct: Type.Optional(Type.Array(Type.Array(Type.String(), { minItems: 2 }))),
 });
 export type WriteCase = Static<typeof WriteCaseSchema>;
 

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { PromptLibrary } from "../src/prompts/template.ts";
 import { coverageSets } from "../src/write/coverage.ts";
-import { buildOutlinePrompt, buildReviewPrompt, buildVocabularyPrompt, buildWriterPrompt } from "../src/write/prompts.ts";
+import { buildOutlinePrompt, buildReviewPrompt, buildWriterPrompt } from "../src/write/prompts.ts";
 import { underReview } from "../src/write/review.ts";
 import { alignedFixture, outlineFixture, writtenFixture } from "./helpers/write.ts";
 
@@ -73,17 +73,6 @@ describe("buildWriterPrompt", () => {
     expect(context).not.toContain("收到商品後 3 天");
   });
 
-  test("an existing vocabulary goes after <context>, keeping the shared prefix", () => {
-    const { aligned, sets, outline } = fixture();
-    const plain = buildWriterPrompt(lib(), aligned, sets, outline, "FEAT-1").userMessage;
-    const withVocabulary = buildWriterPrompt(lib(), aligned, sets, outline, "FEAT-1", {
-      vocabulary: [{ canonical: "會員", definition: "註冊的購買者", avoid: ["使用者"], sourceIds: ["ACT-1"] }],
-    }).userMessage;
-    const end = plain.indexOf("</context>") + "</context>".length;
-    expect(withVocabulary.slice(0, end)).toBe(plain.slice(0, end));
-    expect(withVocabulary).toContain("</context>\n\n<vocabulary>\n- canonical: 會員\n  definition: 註冊的購買者\n  avoid:\n    - 使用者\n</vocabulary>\n\n<feature>");
-    expect(plain).toContain("</context>\n\n<feature>");
-  });
 });
 
 describe("buildReviewPrompt", () => {
@@ -96,19 +85,3 @@ describe("buildReviewPrompt", () => {
   });
 });
 
-describe("buildVocabularyPrompt", () => {
-  test("snapshot", () => {
-    const { aligned, outline, written } = fixture();
-    const prompt = buildVocabularyPrompt(lib(), aligned, outline, written);
-    expect(prompt.systemPrompt).toMatchSnapshot("system");
-    expect(prompt.userMessage).toMatchSnapshot("user");
-  });
-
-  test("names show a redefined Term with its Decision; existing entries come before the text", () => {
-    const { aligned, outline, written } = fixture();
-    const message = buildVocabularyPrompt(lib(), aligned, outline, written, { existing: [{ canonical: "會員", definition: "d", avoid: [], sourceIds: [] }] }).userMessage;
-    expect(block(message, "names")).toMatch(/- id: TERM-1\n(?:.*\n)*?\s+redefinedBy:\n\s+- id: DEC-6\n\s+conclusion: 鑑賞期是到貨後 7 天/);
-    expect(message).toMatch(/<\/decisions>\n\n<existing>\n- canonical: 會員[\s\S]*<\/existing>\n\n<text>/);
-    expect(block(message, "text")).toContain("SCN-1/step/1: 會員取消訂單");
-  });
-});

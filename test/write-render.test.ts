@@ -156,7 +156,7 @@ describe("renderSpec", () => {
   function spec(mutate?: (f: ReturnType<typeof fixture>) => void) {
     const f = fixture();
     mutate?.(f);
-    return renderSpec({ ...f, hasVocabulary: true });
+    return renderSpec(f);
   }
 
   test("lists each .feature with its scenario counts", () => {
@@ -168,7 +168,6 @@ describe("renderSpec", () => {
     const md = spec();
     expect(md).toMatch(/## Actors[\s\S]*- \*\*ACT-1\*\* 會員/);
     expect(md).toMatch(/## Non-functional requirements[\s\S]*- \*\*NFR-1\*\* \(performance\) 退貨申請 2 秒內回應 — target: 2s/);
-    expect(md).toContain("[03-vocabulary.md](03-vocabulary.md)");
   });
 
   test("lists cancelled and added Features with the user's words", () => {

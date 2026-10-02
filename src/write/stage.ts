@@ -14,21 +14,10 @@ import { linksTo, runTelemetry, traceRun } from "../telemetry/run-trace.ts";
 import { failSpan, inSpan } from "../telemetry/spans.ts";
 import { coverageSets } from "./coverage.ts";
 import { applyOutline, checkOutline, type OutlineCheckResult, type OutlineRejected } from "./outline.ts";
-import { buildOutlinePrompt, buildReviewPrompt, buildVocabularyPrompt, buildWriterPrompt } from "./prompts.ts";
+import { buildOutlinePrompt, buildReviewPrompt, buildWriterPrompt } from "./prompts.ts";
 import { buildTrace, gherkinErrors, renderFeature, renderSpec } from "./render.ts";
 import { judgeReview, markUnverified, reviewErrors, ReviewSubmissionSchema, underReview, type ReviewSubmission, type ReviewUnit, type ScenarioReviewRecord } from "./review.ts";
 import { FeatureSubmissionSchema, OutlineSubmissionSchema, type FeatureSubmission, type OutlineSubmission, type WriteOutline, type WrittenFeature } from "./schema.ts";
-import {
-  applyVocabulary,
-  checkVocabulary,
-  featureOf,
-  renderVocabulary,
-  VocabularySubmissionSchema,
-  type AppliedReplacement,
-  type SkippedReplacement,
-  type VocabularyEntry,
-  type VocabularySubmission,
-} from "./vocabulary.ts";
 import { checkFeature, type FeatureIssue, type FeatureRejected } from "./writer.ts";
 
 /** Submit calls per agent: the first plus two retries, as in Extract and Clarify. */
@@ -80,19 +69,11 @@ interface FeatureRecord {
   reason?: string;
 }
 
-/** `03-written.json`: the writers' results before Vocabulary Normalization, which a rewrite with `--only` builds on. */
+/** `03-written.json`: the writers' results, which a rewrite with `--only` builds on. */
 interface WrittenFile {
   features: Record<string, WrittenFeature>;
   reviews: Record<string, ScenarioReviewRecord[]>;
   rejected: Record<string, FeatureRejected[]>;
-}
-
-/** `03-vocabulary.json`. `replacements` are the operations still in force; `applied` and `skipped` what they did. */
-interface VocabularyFile {
-  entries: VocabularyEntry[];
-  replacements: VocabularySubmission["replacements"];
-  applied: AppliedReplacement[];
-  skipped: SkippedReplacement[];
 }
 
 type UpstreamRun = Extract<RunSource, { kind: "run" }>;
@@ -172,8 +153,6 @@ async function write(opts: WriteOptions): Promise<WriteReport> {
   const lib = new PromptLibrary(config.promptsDir);
   const thinking = thinkingFor(config, "write");
   const reviewThinking = thinkingForWriteRole(config, "review");
-  const vocabularyThinking = thinkingForWriteRole(config, "vocabulary");
-  const vocabularyEnabled = config.stages?.write?.vocabulary?.enabled !== false;
   const traceDir = join(runDir, "traces");
   const agents: AgentRecord[] = existing?.agents ?? [];
   const features: Record<string, FeatureRecord> = { ...(existing?.features ?? {}) };
@@ -190,7 +169,7 @@ async function write(opts: WriteOptions): Promise<WriteReport> {
       updatedAt: now().toISOString(),
       source,
       model: config.provider.model,
-      thinking: { outline: thinking, writer: thinking, review: reviewThinking, vocabulary: vocabularyEnabled ? vocabularyThinking : "off" },
+      thinking: { outline: thinking, writer: thinking, review: reviewThinking },
       outputLanguage: language,
       promptHashes: lib.hashes(),
       agents,
@@ -270,8 +249,6 @@ async function write(opts: WriteOptions): Promise<WriteReport> {
   const written = new Map(Object.entries(previous.features));
   const reviews: Record<string, ScenarioReviewRecord[]> = { ...previous.reviews };
   const rejected: Record<string, FeatureRejected[]> = { ...previous.rejected };
-  const vocabularyPath = join(runDir, "03-vocabulary.json");
-  const previousVocabulary = existing && existsSync(vocabularyPath) ? readJson<VocabularyFile>(vocabularyPath) : undefined;
 
   /** Scenario Review of one writer submission (ADR 0018); returns the findings, or the failure message. */
   const runReview = async (label: string, units: ReviewUnit[]): Promise<ReviewSubmission | string> => {
@@ -316,7 +293,7 @@ async function write(opts: WriteOptions): Promise<WriteReport> {
    */
   const runWriter = async (featureId: string): Promise<WriterResult | string> => {
     const label = `write-${featureId}${labelSuffix}`;
-    const prompt = buildWriterPrompt(lib, aligned, sets, outline, featureId, rewriting && previousVocabulary ? { vocabulary: previousVocabulary.entries } : {});
+    const prompt = buildWriterPrompt(lib, aligned, sets, outline, featureId);
     savePrompt(runDir, label, prompt);
     const records: ScenarioReviewRecord[] = [];
     let reviewFailure: string | undefined;
@@ -365,7 +342,6 @@ async function write(opts: WriteOptions): Promise<WriteReport> {
   };
 
   const targets = rewriting ? [...new Set(opts.only!)] : outline.features.map((f) => f.id);
-  const rewritten = new Set<string>();
   const scenarioIds = (featureId: string) => outline.scenarios.filter((s) => s.featureId === featureId).map((s) => s.id);
   await mapLimit(targets, config.concurrency ?? 2, async (featureId) => {
     log(`[write-${featureId}] writing ${scenarioIds(featureId).length} scenario(s)`);
@@ -388,7 +364,6 @@ async function write(opts: WriteOptions): Promise<WriteReport> {
       return;
     }
     written.set(featureId, result.feature);
-    rewritten.add(featureId);
     reviews[featureId] = result.reviews;
     rejected[featureId] = result.rejected;
     features[featureId] = { status: "written", batch, unwritten: result.missing };
@@ -398,74 +373,16 @@ async function write(opts: WriteOptions): Promise<WriteReport> {
     if (result.languageWarnings.length) warnings.push(`write-${featureId}: still not written in ${LANGUAGE_NAMES[language]}, kept: ${result.languageWarnings.join(", ")}`);
   });
 
-  // Vocabulary Normalization (ADR 0019): once the writers are done; a rewrite normalizes only what it rewrote.
-  let vocabulary: VocabularyFile | undefined = vocabularyEnabled ? previousVocabulary : undefined;
-  const scope = rewriting ? rewritten : undefined;
-  if (vocabularyEnabled && written.size && (!scope || scope.size)) {
-    const label = `write-vocabulary${labelSuffix}`;
-    const prompt = buildVocabularyPrompt(lib, aligned, outline, written, { ...(previousVocabulary ? { existing: previousVocabulary.entries } : {}), ...(scope ? { featureIds: scope } : {}) });
-    savePrompt(runDir, label, prompt);
-    let languageIssues: FeatureIssue[] = [];
-    const outcome = await runTraced<VocabularySubmission, VocabularySubmission>(
-      await getBackend(),
-      {
-        label,
-        ...prompt,
-        nudge: buildNudge(lib, "submit_vocabulary"),
-        thinking: vocabularyThinking,
-        maxSubmitAttempts: MAX_SUBMIT_ATTEMPTS,
-        maxNudges: MAX_NUDGES,
-        tool: {
-          name: "submit_vocabulary",
-          description: "Submit the canonical terms and where to replace other wordings. Call exactly once; call again with the complete corrected result if errors are returned.",
-          parameters: VocabularySubmissionSchema,
-          check: (params, { isLast }) => {
-            const { issues } = checkVocabulary(params, language);
-            if (count(issues) && !isLast) return retry("submit_vocabulary", issues);
-            languageIssues = issues;
-            return { accept: params };
-          },
-        },
-      },
-      traceDir,
-    );
-    recordAgent(label, outcome);
-    if (outcome.status === "failed") warnings.push(`${label} failed (${outcome.reason}): ${outcome.message}; the writers' wording is kept`);
-    else {
-      if (languageIssues.length) warnings.push(`${label}: definitions still not written in ${LANGUAGE_NAMES[language]}, kept: ${languageIssues.map((i) => i.path).join(", ")}`);
-      const known = new Set((previousVocabulary?.entries ?? []).map((e) => e.canonical));
-      vocabulary = {
-        entries: [...(previousVocabulary?.entries ?? []), ...outcome.value.entries.filter((e) => !known.has(e.canonical))],
-        replacements: [...(previousVocabulary?.replacements ?? []).filter((r) => !scope?.has(featureOf(outline, r.loc))), ...outcome.value.replacements],
-        applied: [],
-        skipped: [],
-      };
-    }
-  }
-  let renderOutline = outline;
-  let renderWritten = written;
-  if (vocabulary) {
-    const result = applyVocabulary(outline, written, { entries: vocabulary.entries, replacements: vocabulary.replacements });
-    renderOutline = result.outline;
-    renderWritten = result.written;
-    vocabulary = { ...vocabulary, applied: result.applied, skipped: result.skipped };
-    if (result.skipped.length) warnings.push(`Vocabulary Normalization: ${result.skipped.length} replacement(s) skipped; see 03-vocabulary.json`);
-  }
-
-  for (const feature of renderOutline.features) {
-    const text = renderFeature(feature, { aligned, outline: renderOutline, written: renderWritten.get(feature.id), language });
+  for (const feature of outline.features) {
+    const text = renderFeature(feature, { aligned, outline, written: written.get(feature.id), language });
     const errors = gherkinErrors(text);
     if (errors.length) return fail(`Rendering ${feature.id} produced invalid Gherkin, a bug in x-plan: ${errors.join("; ")}`);
     writeText(join(runDir, "features", `${feature.id}.feature`), text);
   }
-  writeText(join(runDir, "03-spec.md"), renderSpec({ aligned, outline: renderOutline, written: renderWritten, hasVocabulary: Boolean(vocabulary) }));
-  writeJson(join(runDir, "03-trace.json"), { ...buildTrace(renderOutline, renderWritten), reviews, ...(vocabulary ? { replacements: vocabulary.applied } : {}) });
+  writeText(join(runDir, "03-spec.md"), renderSpec({ aligned, outline, written }));
+  writeJson(join(runDir, "03-trace.json"), { ...buildTrace(outline, written), reviews });
   writeJson(join(runDir, "03-written.json"), { features: Object.fromEntries(written), reviews, rejected } satisfies WrittenFile);
   writeJson(join(runDir, "03-rejected.json"), { outline: outlineRejected, features: rejected });
-  if (vocabulary) {
-    writeJson(vocabularyPath, vocabulary);
-    writeText(join(runDir, "03-vocabulary.md"), renderVocabulary(vocabulary.entries, vocabulary.applied));
-  }
 
   const failed = outline.features.filter((f) => features[f.id]?.status !== "written");
   for (const f of failed) failures.push(`${f.id}: ${features[f.id]?.reason ?? "not written"}; rewrite it with --only ${f.id}`);

@@ -158,14 +158,6 @@ _Avoid_: Inferred scenario, generated case, edge case
 Write 中，每個 Feature 的 Scenario 寫入前的檢查：由另一個 agent 確認每個 step 都來自它引用的條目、Derived Scenario 確實必然推得、數值都有出處；它只挑錯，修正一律由寫 steps 的 agent 處理。比對的是 Gherkin 與 Aligned Brief 的條目，不是 Clarify 的 Grounding Review。
 _Avoid_: Grounding review, verifier, validation
 
-**Vocabulary Normalization**:
-Write 中，全部 Feature 寫完之後統一用語的步驟：由一個 agent 整理出 Vocabulary，並指出哪些地方要把哪個說法換成標準用語；替換由程式逐字執行並記錄。
-_Avoid_: Glossary, terminology alignment, normalizer
-
-**Vocabulary**:
-Vocabulary Normalization 的產出：每個概念一個標準用語，附上定義、要避免的說法與出處。標準用語優先取 Term、Actor、Domain Entity 的原名，其次是使用者在 Decision 中的用詞；與 Term 不同，它涵蓋 Gherkin 中出現的所有說法，不要求原文有定義。
-_Avoid_: Glossary, dictionary, term list
-
 ## 評價
 
 **Feedback**:
