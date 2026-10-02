@@ -234,10 +234,13 @@ Feature: 會員申請退貨
 - 關鍵字一律用英文（`Feature`、`Rule`、`Scenario`、`Given`…），內容用輸出語言；不加 `# language:`。
 - Tag 順序：`@SCN-n`、種類（`@derived`、`@open`、`@deferred`、`@unverified`、`@unwritten`、`@nfr`）、Agenda Item id、sourceIds。
 - Clarify 新增的 Feature 檔名為 `FEAT-N1.feature`，Feature 層級加上它的 Decision tag，描述註明「此功能來自 Clarify 的決定，需求文件中沒有對應段落」。
-- 佔位的 Then 依語言產生：`<open OQ-3: …>`、`<待決 OQ-3：…>`、`<待决 OQ-3：…>`。
+- 佔位的 Then 依語言產生：`@open` 為 `<open OQ-3: …>`、`<待決 OQ-3：…>`、`<待决 OQ-3：…>`；`@deferred` 為 `<deferred OQ-1: …>`、`<延後 OQ-1：…>`、`<延后 OQ-1：…>`。對應多個題目時，第二行起用 `And`；沒有對應題目的 open 寫成 `<待決：openReason>`。
+- `@unwritten` 的 Scenario 只有 tag 與標題，沒有 steps。
+- 文字中會被 Gherkin 當成語法的部分一律處理掉：標題與 step 的換行改成空白；表格的 `\`、`|`、換行跳脫；Feature 描述中以 `@`、`#`、`|`、`"""` 或 `Scenario:` 等關鍵字開頭的行，前面加上 `· `。
+- 表格依顯示寬度對齊（中日韓文字算兩格）。
 - 渲染結果一律以 `@cucumber/gherkin` 解析；解析失敗代表渲染程式有錯，Run 直接失敗。
 
-`03-spec.md` 的內容：
+`03-spec.md` 的內容（標題沿用 `02-aligned.md` 的慣例用英文；被推翻的事實標出取代它的 Decision）：
 
 1. 目錄：每個 `.feature` 檔、Scenario 數、`@open`／`@deferred`／`@unverified`／`@derived` 的數量
 2. Actor、Domain Entity（屬性、狀態、關聯）

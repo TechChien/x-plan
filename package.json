@@ -18,6 +18,8 @@
     "eval": "tsx scripts/eval.ts"
   },
   "dependencies": {
+    "@cucumber/gherkin": "^42.0.1",
+    "@cucumber/messages": "^34.2.1",
     "@earendil-works/pi-ai": "^0.87.1",
     "@earendil-works/pi-coding-agent": "^0.87.1",
     "@opentelemetry/api": "^1.9.1",

@@ -2,7 +2,8 @@ import type { AlignedBrief, AlignedDecision } from "../../src/clarify/aligned.ts
 import type { RequirementBrief } from "../../src/extract/schema.ts";
 import { coverageSets } from "../../src/write/coverage.ts";
 import { applyOutline, checkOutline } from "../../src/write/outline.ts";
-import type { OutlineScenario, OutlineSubmission, WriteOutline } from "../../src/write/schema.ts";
+import type { FeatureSubmission, OutlineScenario, OutlineSubmission, Step, WriteOutline, WrittenFeature } from "../../src/write/schema.ts";
+import { checkFeature } from "../../src/write/writer.ts";
 import { returnsBrief } from "./brief.ts";
 import { actor, ev, rule } from "./facts.ts";
 
@@ -100,4 +101,31 @@ export function outlineFixture(aligned = alignedFixture()): WriteOutline {
   const result = checkOutline(validOutline(), { aligned, sets, isLast: false, language: "zh" });
   if (result.issues.length) throw new Error(JSON.stringify(result.issues));
   return applyOutline(result.accepted, aligned, result.uncovered);
+}
+
+export const step = (keyword: Step["keyword"], text: string, sourceIds: string[]): Step => ({ keyword, text, sourceIds });
+
+/** FEAT-1: SCN-1 specified (AC-2, BR-2, DEC-1), SCN-2 derived (DEC-1), SCN-3 specified (DEC-5), SCN-4 deferred (OQ-1). */
+export function validFeature(): FeatureSubmission {
+  return {
+    description: "會員可以取消訂單",
+    background: [step("Given", "會員已登入", ["ACT-1"])],
+    scenarios: [
+      { id: "SCN-1", steps: [step("Given", "會員在下單當天", ["AC-2"]), step("When", "會員取消訂單", ["FEAT-1"]), step("Then", "系統接受取消", ["AC-2"])], examples: [] },
+      {
+        id: "SCN-2",
+        steps: [step("Given", "一般會員下單已 <天數> 天", ["DEC-1"]), step("When", "會員取消訂單", ["FEAT-1"]), step("Then", "系統拒絕取消", ["DEC-1"])],
+        examples: [{ name: "邊界", derived: true, header: ["天數"], rows: [{ cells: ["8"], sourceIds: ["DEC-1"] }] }],
+      },
+      { id: "SCN-3", steps: [step("Given", "VIP 會員下單已 10 天", ["DEC-5"]), step("When", "會員取消訂單", ["FEAT-1"]), step("Then", "系統接受取消", ["DEC-5"])], examples: [] },
+      { id: "SCN-4", steps: [step("Given", "訂單已出貨", ["FEAT-1"]), step("When", "會員取消訂單", ["FEAT-1"])], examples: [] },
+    ],
+  };
+}
+
+/** `validFeature()` accepted for FEAT-1; FEAT-2 has no writer result. */
+export function writtenFixture(aligned = alignedFixture(), outline = outlineFixture(aligned)): Map<string, WrittenFeature> {
+  const result = checkFeature(validFeature(), { aligned, sets: coverageSets(aligned), outline, featureId: "FEAT-1", isLast: false, language: "zh" });
+  if (result.issues.length) throw new Error(JSON.stringify(result.issues));
+  return new Map([["FEAT-1", result.accepted]]);
 }

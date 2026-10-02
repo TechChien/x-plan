@@ -1,29 +1,9 @@
 import { describe, expect, test } from "vitest";
 import type { AlignedBrief } from "../src/clarify/aligned.ts";
 import { contextIds, coverageSets } from "../src/write/coverage.ts";
-import type { FeatureSubmission, Step } from "../src/write/schema.ts";
+import type { FeatureSubmission } from "../src/write/schema.ts";
 import { checkFeature, numbersIn } from "../src/write/writer.ts";
-import { alignedFixture, outlineFixture } from "./helpers/write.ts";
-
-const step = (keyword: Step["keyword"], text: string, sourceIds: string[]): Step => ({ keyword, text, sourceIds });
-
-/** FEAT-1: SCN-1 specified (AC-2, BR-2, DEC-1), SCN-2 derived (DEC-1), SCN-3 specified (DEC-5), SCN-4 deferred (OQ-1). */
-function validFeature(): FeatureSubmission {
-  return {
-    description: "會員可以取消訂單",
-    background: [step("Given", "會員已登入", ["ACT-1"])],
-    scenarios: [
-      { id: "SCN-1", steps: [step("Given", "會員在下單當天", ["AC-2"]), step("When", "會員取消訂單", ["FEAT-1"]), step("Then", "系統接受取消", ["AC-2"])], examples: [] },
-      {
-        id: "SCN-2",
-        steps: [step("Given", "一般會員下單已 <天數> 天", ["DEC-1"]), step("When", "會員取消訂單", ["FEAT-1"]), step("Then", "系統拒絕取消", ["DEC-1"])],
-        examples: [{ name: "邊界", derived: true, header: ["天數"], rows: [{ cells: ["8"], sourceIds: ["DEC-1"] }] }],
-      },
-      { id: "SCN-3", steps: [step("Given", "VIP 會員下單已 10 天", ["DEC-5"]), step("When", "會員取消訂單", ["FEAT-1"]), step("Then", "系統接受取消", ["DEC-5"])], examples: [] },
-      { id: "SCN-4", steps: [step("Given", "訂單已出貨", ["FEAT-1"]), step("When", "會員取消訂單", ["FEAT-1"])], examples: [] },
-    ],
-  };
-}
+import { alignedFixture, outlineFixture, step, validFeature } from "./helpers/write.ts";
 
 function check(submission: FeatureSubmission, opts: { isLast?: boolean; aligned?: AlignedBrief; featureId?: string } = {}) {
   const aligned = opts.aligned ?? alignedFixture();
