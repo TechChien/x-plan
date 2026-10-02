@@ -154,8 +154,21 @@ Background 的 sourceIds 可以引用本 Feature 任何一個 Scenario 的有效
 程式檢查通過後，在同一次交卷檢查中（`SubmitTool.check`，非同步）呼叫 reviewer，比照 [ADR 0011](../adr/0011-grounding-review-before-decisions-are-written.md)（[ADR 0018](../adr/0018-scenario-review.md)）。
 
 - reviewer 每次只看本 Feature 的 Scenario，每個附上它引用的條目全文：事實附 Evidence 引文，Decision 附結論與使用者原話。它看不到其他條目，沒有別的材料可以當依據。
-- reviewer 逐句（step、Examples 列）標註：根據是哪些條目、是不是由引用的條目**必然推得**、有沒有和引用的條目相反、出現的具體數值出自哪個條目。
-- 判定由程式從回報推出：
+- reviewer 逐句（step、Examples 列）標註：根據是哪些條目、是不是由引用的條目**必然推得**、有沒有和引用的條目相反、出現的具體數值出自哪個條目。Background 也是一個審查單位。
+
+```jsonc
+// submit_review
+{ "reviews": [{ "unit": "SCN-3",                      // 或 "background"
+                "lines": [{ "ref": "steps[0]",          // 或 "examples[0].rows[1]"
+                            "grounding": "stated" | "entailed" | "other" | "none",
+                            "contradicts": false,
+                            "values": [{ "value": "10", "source": "DEC-5" }],   // source 也可以是 entailed 或 none
+                            "actualSourceIds": [] }] }] }                       // grounding 為 other 時，實際說了這句的條目
+```
+
+每個單位、每一行都要剛好回報一次，否則 reviewer 重交。Examples 列以 `欄位 = 值` 的形式交給 reviewer。
+
+- 判定由程式從回報推出：`contradicts` 為 true → `contradicts`；`grounding` 為 `none` 時，derived 的行 → `underived`，其餘 → `unsupported`；`other` → `misattributed`；`values` 中 source 為 `none` 的 → `invented-value`。
 
 | 判定 | 意思 | writer 要做的事 |
 |---|---|---|
@@ -185,7 +198,8 @@ Background 的 sourceIds 可以引用本 Feature 任何一個 Scenario 的有效
 }
 ```
 
-- `loc` 由程式在 user message 中為每一段文字標出：`FEAT-1/description`、`FEAT-1/rule/1`、`SCN-3/title`、`SCN-3/step/2`、`SCN-3/background/1`、`SCN-3/examples/1/row/2/cell/1` 等。
+- `loc` 由程式在 user message 中為每一段文字標出：`FEAT-1/description`、`FEAT-1/rule/1`、`FEAT-1/background/0`、`FEAT-N1/name`（只有新 Feature）、`SCN-3/title`、`SCN-3/step/2`、`SCN-3/step/2/table/0/1`、`SCN-3/examples/0/name`、`SCN-3/examples/0/row/2/cell/1`。Brief 的 Feature 名稱是需求文件的原文，不列入；沒有 writer 結果的 Feature 只有 Rule 與 Scenario 標題。
+- 替換套用在 outline 與 writer 結果的副本上：`03-outline.json` 保留 outline 原本的標題，`03-vocabulary.json` 的每一筆替換都記錄替換前後的整段文字。
 - 標準用語的優先順序：Brief 的 Term、Actor、Domain Entity 原名 → 使用者在 Decision 中的用詞 → steps 中最常出現的說法。不能新創一個所有來源都沒出現過的說法。這條只寫在 prompt。
 - 程式逐字套用替換，只在指定的 `loc` 內、跳過 `<…>` 佔位與引號中的原文值；`from` 找不到時跳過並記成 warning，不退回。除了 schema 驗證與語言檢查（`definition`）之外，不做程式檢查。
 - 替換後的文字不再經過 Scenario Review，替換紀錄完整保存在 `03-vocabulary.json`。
