@@ -19,6 +19,11 @@ export interface CoverageSets {
   forbidden: Map<string, ForbiddenReason>;
   /** Decisions the outline may mark not behavioural instead of covering. */
   notBehavioralAllowed: string[];
+  /**
+   * Decisions that replace only named items (a Term, Actor, Entity or Dependency) but cannot be marked not behavioural
+   * because something that must be covered uses one of the names: the scenario for it needs the new definition.
+   */
+  notBehavioralBlocked: Map<string, { terms: string[]; mentionedIn: string[] }>;
 }
 
 /** Items that describe behaviour: a Decision replacing one of these, or reconciling them, has behaviour to write. */
@@ -54,11 +59,45 @@ export function coverageSets(aligned: AlignedBrief): CoverageSets {
     ...brief.acceptanceCriteria.map((ac) => ac.id).filter(notForbidden),
     ...active.filter((d) => d.effect !== "confirm").map((d) => d.id),
   ];
-  const notBehavioralAllowed = active
-    .filter((d) => d.effect === "new" || (d.effect === "replace" && !d.supersedes.some((id) => BEHAVIOURAL.test(id))))
-    .map((d) => d.id);
 
-  return { features, mustCover, citable, forbidden, notBehavioralAllowed };
+  // A Decision that redefines a name others use changes their behaviour too, e.g. a new length for 鑑賞期 changes the
+  // return window of every rule that says 鑑賞期. A plain substring match errs toward requiring the citation.
+  const names = namesById(aligned);
+  const texts = mustCoverTexts(aligned, mustCover);
+  const notBehavioralAllowed: string[] = [];
+  const notBehavioralBlocked: CoverageSets["notBehavioralBlocked"] = new Map();
+  for (const d of active) {
+    if (d.effect === "new") notBehavioralAllowed.push(d.id);
+    if (d.effect !== "replace" || d.supersedes.some((id) => BEHAVIOURAL.test(id))) continue;
+    const terms = [...new Set(d.supersedes.flatMap((id) => names.get(id) ?? []))];
+    const mentionedIn = [...texts].filter(([id, text]) => id !== d.id && terms.some((t) => text.includes(t.toLowerCase()))).map(([id]) => id);
+    if (mentionedIn.length) notBehavioralBlocked.set(d.id, { terms, mentionedIn });
+    else notBehavioralAllowed.push(d.id);
+  }
+
+  return { features, mustCover, citable, forbidden, notBehavioralAllowed, notBehavioralBlocked };
+}
+
+/** The names a Decision replacing the item redefines: a Term with its aliases, or an Actor, Entity or Dependency. */
+function namesById(aligned: AlignedBrief): Map<string, string[]> {
+  const { brief } = aligned;
+  const named = [
+    ...brief.glossary.map((t) => [t.id, [t.term, ...t.aliases]] as const),
+    ...[...brief.actors, ...brief.domainEntities, ...brief.dependencies].map((it) => [it.id, [it.name]] as const),
+  ];
+  return new Map(named.map(([id, list]) => [id, list.map((n) => n.trim()).filter(Boolean)]));
+}
+
+/** The wording of each item that must be covered, lower-cased for matching. */
+function mustCoverTexts(aligned: AlignedBrief, mustCover: string[]): Map<string, string> {
+  const { brief } = aligned;
+  const all = new Map<string, string[]>([
+    ...brief.features.map((f) => [f.id, [f.name, f.description, ...f.inputs, ...f.outputs]] as [string, string[]]),
+    ...brief.businessRules.map((r) => [r.id, [r.rule, ...r.conditions]] as [string, string[]]),
+    ...brief.acceptanceCriteria.map((ac) => [ac.id, [ac.text, ac.given ?? "", ac.when ?? "", ac.then ?? ""]] as [string, string[]]),
+    ...aligned.decisions.map((d) => [d.id, [d.conclusion]] as [string, string[]]),
+  ]);
+  return new Map(mustCover.map((id) => [id, (all.get(id) ?? []).join("\n").toLowerCase()]));
 }
 
 /** What must be covered and is neither cited nor marked not behavioural, in `mustCover` order. */

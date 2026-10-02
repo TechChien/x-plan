@@ -7,8 +7,11 @@
 ```
 mustCover = 沒被推翻的 FEAT ∪ AC ∪ BR ∪ effect 不是 confirm 的 active Decision  − supersededBy 的 key − 隨 Feature 取消的 BR、AC
 forbidden = supersededBy 的 key ∪ 隨 Feature 取消的 BR、AC ∪ 未被確認的 ASM ∪ 非 active 的 Decision
-notBehavioralAllowed = effect 為 new 的 active Decision，以及只推翻 FEAT、BR、AC、ASM 以外條目（例如 Term）的 replace
+notBehavioralAllowed = effect 為 new 的 active Decision，以及只推翻 FEAT、BR、AC、ASM 以外條目（例如 Term）的 replace，
+                       但被推翻條目的名稱不能出現在任何 mustCover 條目的文字中
 ```
+
+名詞的定義常常間接帶有行為：Term「鑑賞期」從 3 天改成 7 天，會改變「鑑賞期內可無條件退貨」這條規則的期限。這種 Decision 如果被標掉，寫那條規則的 writer 看不到新的定義，只能寫出沒有數字的情境，或是讀到舊的 3 天。所以程式檢查名稱（Term 含 aliases）有沒有出現在必須覆蓋的條目中；出現了，Decision 就必須被 Scenario 引用。
 
 使用者取消整個 Feature 時，只屬於它的 BR（`featureIds` 全部被推翻）與 AC 隨之取消；同時屬於其他 Feature 的 BR 保留。
 

@@ -48,6 +48,7 @@ notBehavioralAllowed = { d ∈ activeDec | d.effect = new，或 d.effect = repla
 
 - **隨 Feature 取消**：使用者取消整個 Feature 時，只屬於它的 BR 與 AC 也一起取消，不再要求覆蓋，也不得引用；同時屬於其他 Feature 的 BR 保留。
 - **notBehavioralAllowed 包含推翻非行為條目的 replace**：例如推翻 TERM 定義的 Decision，effect 是 `replace`，但沒有行為可寫。推翻 FEAT、BR、AC、ASM 的 replace，以及調和矛盾的 `reconcile`，一律不能標。
+- **被用到的名稱帶有行為**：推翻 Term、Actor、Domain Entity、Dependency 的 Decision，只有在被推翻條目的名稱（Term 含 aliases）沒有出現在任何 mustCover 條目的文字中（FEAT 的名稱、描述、輸入、輸出，BR 的規則與條件，AC 的文字與 given／when／then，其他 Decision 的結論）時，才能標 `notBehavioral`。出現了就表示它改變了那些條目的行為，例如「鑑賞期」從 3 天改成 7 天，會改變「鑑賞期內可無條件退貨」的期限，所以必須被 Scenario 引用，writer 才拿得到新的定義。比對方式是不分大小寫的子字串比對，寧可多要求引用。被擋下的 Decision 與出現的位置記錄在 `notBehavioralBlocked`，退回訊息據此說明原因。
 - forbidden 的每個條目都記錄原因（被哪條 Decision 推翻、隨哪個 Feature 取消、未確認的 Assumption、被哪條 Decision 更正），退回訊息據此告訴 agent 應改引用什麼。
 
 - 被 confirm 的 ASM 可以當成一般事實引用；DEC 的 effect 為 `confirm` 時，引用它或它確認的 ASM 都可以，不強制。
@@ -262,7 +263,8 @@ Feature: 會員申請退貨
 **Writer 的 user message** 由程式從 outline 展開，不含整份 Aligned Brief 與其他 Feature 的 outline：
 
 ```
-<context>      Actor、Term、Domain Entity、Dependency 的原名與定義；全部 Feature 的名稱清單
+<context>      Actor、Term、Domain Entity、Dependency 的原名與定義；被推翻的條目不列舊內容，改列推翻它的 Decision 的結論；
+               全部 Feature 的名稱清單
 ─────────────── 以上是所有 writer 共用的前綴 ───────────────
 <vocabulary>   只有 --only 補寫時才有
 <feature>      本 Feature 的描述，以及 outline 中本 Feature 的片段（Rule 標題、SCN、種類），原封不動

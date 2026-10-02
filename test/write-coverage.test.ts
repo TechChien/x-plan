@@ -29,8 +29,8 @@ describe("coverageSets", () => {
   });
 
   test("only Decisions that replace no behaviour may be marked not behavioural", () => {
-    // DEC-1 replaces a Business Rule, DEC-3 only confirms; DEC-6 replaces a Term.
-    expect(sets.notBehavioralAllowed).toEqual(["DEC-4", "DEC-5", "DEC-6"]);
+    // DEC-1 replaces a Business Rule, DEC-3 only confirms; DEC-6 replaces a Term that DEC-4 uses (below).
+    expect(sets.notBehavioralAllowed).toEqual(["DEC-4", "DEC-5"]);
   });
 
   test("a reconciling Decision settles a contradiction between behaviours, so it cannot be marked not behavioural", () => {
@@ -38,6 +38,30 @@ describe("coverageSets", () => {
     aligned.decisions.push(alignedDec("DEC-7", { effect: "reconcile", relatedIds: ["BR-2", "BR-3"], resolves: ["CTR-1"] }));
     expect(coverageSets(aligned).notBehavioralAllowed).not.toContain("DEC-7");
     expect(coverageSets(aligned).mustCover).toContain("DEC-7");
+  });
+});
+
+describe("a Decision that replaces a Term", () => {
+  test("may be marked not behavioural when nothing that must be covered uses the term", () => {
+    const aligned = alignedFixture();
+    aligned.decisions.find((d) => d.id === "DEC-4")!.conclusion = "退貨期自到貨日起算";
+    const sets = coverageSets(aligned);
+    expect(sets.notBehavioralAllowed).toContain("DEC-6");
+    expect(sets.notBehavioralBlocked.has("DEC-6")).toBe(false);
+  });
+
+  test("carries behaviour when a Feature, rule, criterion or other Decision uses the term, so it must be cited", () => {
+    const sets = coverageSets(alignedFixture());
+    expect(sets.notBehavioralAllowed).not.toContain("DEC-6");
+    expect(sets.notBehavioralBlocked.get("DEC-6")).toEqual({ terms: ["鑑賞期"], mentionedIn: ["DEC-4"] });
+  });
+
+  test("an alias counts as a use of the term", () => {
+    const aligned = alignedFixture();
+    aligned.decisions.find((d) => d.id === "DEC-4")!.conclusion = "退貨期自到貨日起算";
+    aligned.brief.glossary[0]!.aliases = ["猶豫期"];
+    aligned.brief.businessRules.push(rule("BR-5", "猶豫期內可無條件退貨", [], ["FEAT-2"]));
+    expect(coverageSets(aligned).notBehavioralBlocked.get("DEC-6")).toEqual({ terms: ["鑑賞期", "猶豫期"], mentionedIn: ["BR-5"] });
   });
 });
 
