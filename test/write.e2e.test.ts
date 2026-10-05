@@ -94,12 +94,17 @@ describe("runWrite", () => {
     expect(() => recordFeedback(d.write, { type: "missing", text: "x", at: "FEAT-2" }, { author: "t", now: new Date() })).not.toThrow();
   });
 
-  test("a writer the review stops rewrites, and the second submission is accepted", async () => {
+  test("a writer the review stops rewrites, and only the rewritten scenario is reviewed again", async () => {
     const d = dirs();
-    const b = backend({ writers: [[{ call: validFeature() }, { call: validFeature() }], [{ call: feature2() }]], reviews: [[flagging("SCN-3", "steps[0]")], [approving]] });
+    const rewritten = validFeature();
+    rewritten.scenarios[2]!.steps[0]!.text = "VIP 會員下單第 10 天";
+    const b = backend({ writers: [[{ call: validFeature() }, { call: rewritten }], [{ call: feature2() }]], reviews: [[flagging("SCN-3", "steps[0]")], [approving]] });
     const report = await runWrite(options(d, b));
     expect(report.status).toBe("succeeded");
     expect(b.sessions.find((s) => s.systemPrompt.includes("You write the steps"))!.prompts).toHaveLength(1);
+    const second = b.sessions.filter((s) => s.systemPrompt.includes("You review Gherkin"))[1]!.prompts[0]!;
+    expect(second).toContain("unit: SCN-3");
+    expect(second).not.toContain("unit: SCN-1");
     const reviews = readJson<{ reviews: Record<string, { attempt: number; unit: string; verdicts: string[] }[]> }>(join(d.write, "03-trace.json")).reviews["FEAT-1"]!;
     expect(reviews.filter((r) => r.verdicts.length)).toEqual([expect.objectContaining({ attempt: 1, unit: "SCN-3", verdicts: ["contradicts"] })]);
     expect(read(join(d.write, "features", "FEAT-1.feature"))).not.toContain("@unverified");
@@ -108,9 +113,11 @@ describe("runWrite", () => {
   test("a scenario the review still stops after the last attempt is kept as @unverified", async () => {
     const d = dirs();
     const flag = [flagging("SCN-3", "steps[0]")];
-    const b = backend({ writers: [[{ call: validFeature() }, { call: validFeature() }, { call: validFeature() }], [{ call: feature2() }]], reviews: [flag, flag, flag] });
+    const b = backend({ writers: [[{ call: validFeature() }, { call: validFeature() }, { call: validFeature() }], [{ call: feature2() }]], reviews: [flag] });
     const report = await runWrite(options(d, b));
     expect(report.status).toBe("succeeded");
+    // The writer never changed SCN-3, so its first review stands: FEAT-1 is reviewed once, then FEAT-2.
+    expect(b.sessions.filter((s) => s.systemPrompt.includes("You review Gherkin"))).toHaveLength(2);
     expect(read(join(d.write, "features", "FEAT-1.feature"))).toContain("@SCN-3 @unverified @DEC-5");
     expect(read(join(d.write, "03-spec.md"))).toMatch(/## Unverified\n\n- SCN-3 VIP 第 10 天取消: review: steps\[0\] contradicts DEC-5/);
     expect(report.warnings).toContain("write-FEAT-1: SCN-3 kept as @unverified; see 03-spec.md");

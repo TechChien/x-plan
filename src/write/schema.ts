@@ -59,7 +59,7 @@ export const OutlineSubmissionSchema = Type.Object(
     notBehavioral: Type.Array(
       Type.Object(
         {
-          id: Str("A Decision listed as notBehavioralAllowed in <coverage>"),
+          id: Str("An id listed as notBehavioralAllowed in <coverage>"),
           reason: Str("Why it describes no behaviour, e.g. it only defines a term"),
         },
         { additionalProperties: false },

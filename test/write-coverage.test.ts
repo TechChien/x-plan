@@ -10,8 +10,22 @@ describe("coverageSets", () => {
     expect(sets.features).toEqual(["FEAT-1", "FEAT-2"]);
   });
 
-  test("must cover Features, rules, criteria and active Decisions that do more than confirm", () => {
-    expect(sets.mustCover).toEqual(["FEAT-1", "FEAT-2", "BR-2", "BR-3", "AC-1", "AC-2", "DEC-1", "DEC-4", "DEC-5", "DEC-6"]);
+  test("must cover Features, rules, criteria, Non-functional Requirements and every active Decision", () => {
+    expect(sets.mustCover).toEqual(["FEAT-1", "FEAT-2", "BR-2", "BR-3", "AC-1", "AC-2", "NFR-1", "DEC-1", "DEC-3", "DEC-4", "DEC-5", "DEC-6"]);
+  });
+
+  test("a confirm Decision is also covered by citing the Assumption it confirms", () => {
+    expect(sets.coveredVia).toEqual(new Map([["DEC-3", ["ASM-2"]]]));
+    expect(uncovered(sets, ["ASM-2"])).not.toContain("DEC-3");
+    expect(uncovered(sets, ["DEC-3"])).not.toContain("DEC-3");
+  });
+
+  test("a superseded Non-functional Requirement need not be covered", () => {
+    const aligned = alignedFixture();
+    aligned.supersededBy["NFR-1"] = ["DEC-1"];
+    const sets = coverageSets(aligned);
+    expect(sets.mustCover).not.toContain("NFR-1");
+    expect(sets.notBehavioralAllowed).not.toContain("NFR-1");
   });
 
   test("superseded items, unconfirmed Assumptions and revised Decisions cannot be cited, each with the reason", () => {
@@ -28,9 +42,9 @@ describe("coverageSets", () => {
     for (const id of ["BR-1", "TERM-1", "ASM-1", "DEC-2", "OQ-1", "CTR-1", "NOPE-1"]) expect(sets.citable.has(id)).toBe(false);
   });
 
-  test("only Decisions that replace no behaviour may be marked not behavioural", () => {
-    // DEC-1 replaces a Business Rule, DEC-3 only confirms; DEC-6 replaces a Term that DEC-4 uses (below).
-    expect(sets.notBehavioralAllowed).toEqual(["DEC-4", "DEC-5"]);
+  test("Non-functional Requirements and Decisions that replace no behaviour may be marked not behavioural", () => {
+    // DEC-1 replaces a Business Rule; DEC-6 replaces a Term that DEC-4 uses (below). DEC-3 confirms an Assumption.
+    expect(sets.notBehavioralAllowed).toEqual(["NFR-1", "DEC-3", "DEC-4", "DEC-5"]);
   });
 
   test("a reconciling Decision settles a contradiction between behaviours, so it cannot be marked not behavioural", () => {
@@ -93,6 +107,6 @@ describe("a superseded Feature", () => {
 describe("uncovered", () => {
   test("lists what must be covered and is neither cited nor marked not behavioural, in mustCover order", () => {
     const sets = coverageSets(alignedFixture());
-    expect(uncovered(sets, ["FEAT-1", "FEAT-2", "BR-2", "AC-1", "DEC-1", "DEC-4", "DEC-6"])).toEqual(["BR-3", "AC-2", "DEC-5"]);
+    expect(uncovered(sets, ["FEAT-1", "FEAT-2", "BR-2", "AC-1", "DEC-1", "DEC-4", "DEC-6"])).toEqual(["BR-3", "AC-2", "NFR-1", "DEC-3", "DEC-5"]);
   });
 });

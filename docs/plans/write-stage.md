@@ -39,10 +39,10 @@ superseded    = supersededBy 的 key
 cancelled     = featureIds 全部被推翻的 BR、featureId 被推翻的 AC（隨 Feature 一起取消）
 activeDec     = status 為 active 的 Decision
 features      = Brief 的 FEAT − superseded
-mustCover     = features ∪ AC ∪ BR ∪ { d ∈ activeDec | d.effect ≠ confirm }  − superseded − cancelled
+mustCover     = features ∪ AC ∪ BR ∪ NFR ∪ activeDec  − superseded − cancelled
 forbidden     = superseded ∪ cancelled ∪ 未被 confirm 的 ASM ∪ 非 active 的 DEC
 citable       = Brief 的事實 ∪ ASM ∪ activeDec  − forbidden          （OQ、CTR 等題目不能當 sourceIds，只能放在 agendaIds）
-notBehavioralAllowed = { d ∈ activeDec | d.effect = new，或 d.effect = replace 且只推翻 FEAT、BR、AC、ASM 以外的條目 }
+notBehavioralAllowed = NFR − superseded ∪ { d ∈ activeDec | d.effect = new 或 confirm，或 d.effect = replace 且只推翻 FEAT、BR、AC、ASM 以外的條目 }
 ```
 
 - **隨 Feature 取消**：使用者取消整個 Feature 時，只屬於它的 BR 與 AC 也一起取消，不再要求覆蓋，也不得引用；同時屬於其他 Feature 的 BR 保留。
@@ -50,7 +50,8 @@ notBehavioralAllowed = { d ∈ activeDec | d.effect = new，或 d.effect = repla
 - **被用到的名稱帶有行為**：推翻 Term、Actor、Domain Entity、Dependency 的 Decision，只有在被推翻條目的名稱（Term 含 aliases）沒有出現在任何 mustCover 條目的文字中（FEAT 的名稱、描述、輸入、輸出，BR 的規則與條件，AC 的文字與 given／when／then，其他 Decision 的結論）時，才能標 `notBehavioral`。出現了就表示它改變了那些條目的行為，例如「鑑賞期」從 3 天改成 7 天，會改變「鑑賞期內可無條件退貨」的期限，所以必須被 Scenario 引用，writer 才拿得到新的定義。比對方式是不分大小寫的子字串比對，寧可多要求引用。被擋下的 Decision 與出現的位置記錄在 `notBehavioralBlocked`，退回訊息據此說明原因。
 - forbidden 的每個條目都記錄原因（被哪條 Decision 推翻、隨哪個 Feature 取消、未確認的 Assumption、被哪條 Decision 更正），退回訊息據此告訴 agent 應改引用什麼。
 
-- 被 confirm 的 ASM 可以當成一般事實引用；DEC 的 effect 為 `confirm` 時，引用它或它確認的 ASM 都可以，不強制。
+- 被 confirm 的 ASM 可以當成一般事實引用。DEC 的 effect 為 `confirm` 時必須覆蓋：引用它或它確認的 ASM 都算（`coveredVia`），也可以標 `notBehavioral` 附理由，例如只是在確認由誰執行。
+- NFR 必須覆蓋：寫成 Scenario，或標 `notBehavioral` 附理由，例如沒有可量測的門檻（[write-review-improvements.md](write-review-improvements.md) §4）。
 - 被推翻的 FEAT 不產生 `.feature`，列在 `03-spec.md` 的「已取消的 Feature」，附上推翻它的 Decision 與使用者原話。
 
 ### 1.4 `submit_outline`
@@ -86,13 +87,13 @@ Scenario = {
 ### 1.5 Outline 的程式檢查
 
 1. 每個 `features` 中的 FEAT 都在 Brief 中、沒有被推翻，且只出現一次；每個 `features` 集合中的 FEAT 都有一個區塊，且至少有一個 Scenario（FEAT 的覆蓋）。
-2. `newFeature.sourceIds` 至少含一條 `notBehavioralAllowed` 中的 Decision（effect 為 `new` 的 active Decision）。
-3. **覆蓋**：`mustCover − 已覆蓋 = ∅`；已覆蓋 = 所有 Scenario 的有效 sourceIds ∪ `notBehavioral` 的 id ∪ 有 Scenario 的 FEAT 區塊。
+2. `newFeature.sourceIds` 至少含一條 effect 為 `new` 的 active Decision。
+3. **覆蓋**：`mustCover − 已覆蓋 = ∅`；已覆蓋 = 所有 Scenario 的有效 sourceIds ∪ `notBehavioral` 的 id ∪ 有 Scenario 的 FEAT 區塊；confirm Decision 確認的 ASM 已覆蓋時，該 Decision 也算已覆蓋。
 4. **禁止引用**：所有 sourceIds、Rule 的 `sourceId` 都必須在 `citable` 中。退回訊息依原因說明：被推翻的條目應改引用哪條 Decision、被更正的 Decision 應改引用哪條、未確認的 Assumption 不得引用、OQ 等題目要放在 `agendaIds`。`specified`、`derived` 的 Scenario 的有效 sourceIds 不得為空。
 5. 每條 AC 至少被一個 `kind` 為 `specified` 的 Scenario 引用（被推翻的 AC 不在此限）。
 6. `notBehavioral` 的 id 必須在 `notBehavioralAllowed` 中，`reason` 不得為空。BR、AC、FEAT 一律不能標。
 7. `open`、`deferred` 的 `agendaIds` 必須指向 status 分別為 `unresolved`、`deferred` 的 Agenda Item；`deferred` 至少要有一個，`open` 沒有 `agendaIds` 時 `openReason` 必填。`specified`、`derived` 的 Scenario 不得有 `agendaIds`。
-8. 引用 NFR 的 Scenario：該 NFR 必須有 `target`，或 sourceIds 中另有 active Decision；否則退回（沒有門檻的 NFR 不寫成 Scenario）。
+8. ~~引用 NFR 的 Scenario：該 NFR 必須有 `target`，或 sourceIds 中另有 active Decision。~~ 已刪除：它擋住了不需要門檻也能驗證的 NFR（例如必須帶某個 header）。編造門檻由數字檢查與 Scenario Review 的 `invented-value` 攔下（[write-review-improvements.md](write-review-improvements.md) §4）。
 9. Rule 的 `sourceId` 是 BR 或 active Decision，同一個 Feature 內不重複。
 10. 語言檢查（ADR 0005）：標題、`newFeature` 的名稱與描述、`reason`、`openReason`。
 
@@ -177,6 +178,8 @@ Background 的 sourceIds 可以引用本 Feature 任何一個 Scenario 的有效
 | `underived` | 標 `@derived` 但推不出來 | 刪掉推不出的部分，或降為 `open` |
 | `misattributed` | 內容其實來自別的條目 | 改正 sourceIds |
 
+- 同一個 writer 的多次交卷之間，內容沒變的單位（kind、sourceIds 與每一行的文字、引用都相同）沿用上一次的回報，不再送 reviewer；只有改過的單位重審。同一段文字因此不會拿到兩種判定。
+- derived Scenario 中位於 When 之前的行（前提）被判 `underived` 時，退回訊息另外提醒：刪掉前提後要確認每個 Then 仍然成立，不成立就連 Then 一起刪或給 `openReason`。
 - 被標記的 Scenario 以 tool result 退回 writer，與程式檢查共用 3 次交卷額度。重交 3 次後仍被標記的，照樣寫進 `.feature`，標 `@unverified`，reviewer 的意見寫在 `03-trace.json` 並列在 `03-spec.md`。
 - reviewer 本身失敗時，該 Feature 的 writer 失敗（§1.2），不會跳過檢查。
 - thinking 預設比 writer 低一級（xhigh、high 降為 medium，medium 降為 low），可用 `stages.write.review.thinking` 調整。

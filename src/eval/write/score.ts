@@ -1,5 +1,8 @@
 import { normalize } from "../../extract/evidence.ts";
-import { gherkinErrors, type TracedScenario, type WriteTrace } from "../../write/render.ts";
+import type { AlignedBrief } from "../../clarify/aligned.ts";
+import { contextIds, coverageSets } from "../../write/coverage.ts";
+import { itemTexts } from "../../write/writer.ts";
+import { duplicateScenarios, gherkinErrors, type TracedScenario, type WriteTrace } from "../../write/render.ts";
 import type { ScenarioReviewRecord, ScenarioReviewVerdict } from "../../write/review.ts";
 import type { WriteOutline } from "../../write/schema.ts";
 import type { WriteCase } from "./cases.ts";
@@ -14,6 +17,8 @@ export interface WriteArtifacts {
   featureFiles: Record<string, string>;
   /** `run.json` agents, for the outline's refused submissions. */
   agents: { label: string; metrics: { checkFailures: number } }[];
+  /** The Aligned Brief the Run wrote from, for each Decision's effect. */
+  aligned: AlignedBrief;
 }
 
 export interface WriteScore {
@@ -39,6 +44,20 @@ export interface WriteScore {
   featureOnly: number;
   /** Scenarios a writer turned open because the outline gave too little. */
   downgraded: number;
+  /**
+   * Specified scenarios that stand, besides Features, only on reconcile or confirm Decisions: they most likely restate
+   * a scenario that already shows what the Decision settles.
+   */
+  restating: number;
+  /** Groups of scenarios with the same Given and Then. */
+  duplicates: number;
+  /** underived findings on a derived scenario's premise: the review's error toward dropping a Given the Thens need. */
+  underivedPremises: number;
+  /**
+   * invented-value findings whose value is one a context item (a name every step is written with) also says: the
+   * program counts it as given to every step, but the reviewer sees only the items a line cites and may not.
+   */
+  contextValueFlags: number;
   /** `.feature` files that do not parse; always empty unless rendering has a bug. */
   invalidFiles: string[];
 }
@@ -84,6 +103,16 @@ export function scoreWrite(labels: WriteCase, a: WriteArtifacts): WriteScore {
   const review: WriteScore["review"] = { unsupported: 0, contradicts: 0, "invented-value": 0, underived: 0, misattributed: 0 };
   for (const records of Object.values(a.reviews)) for (const r of records) for (const v of r.verdicts) review[v]++;
 
+  const texts = itemTexts(a.aligned);
+  const contextTexts = [...contextIds(a.aligned, coverageSets(a.aligned))].map((id) => (texts.get(id) ?? "").toLowerCase());
+  const contextValueFlags = Object.values(a.reviews).reduce(
+    (n, records) => n + records.reduce((m, r) => m + r.findings.filter((f) => f.verdict === "invented-value" && f.detail && contextTexts.some((t) => t.includes(f.detail!.trim().toLowerCase()))).length, 0),
+    0,
+  );
+
+  const effects = new Map(a.aligned.decisions.map((d) => [d.id, d.effect]));
+  const restates = (id: string) => effects.get(id) === "reconcile" || effects.get(id) === "confirm";
+
   const shownOpen = new Set(after.filter((s) => s.kind === "open" || s.kind === "deferred").flatMap((s) => s.agendaIds));
 
   return {
@@ -105,6 +134,13 @@ export function scoreWrite(labels: WriteCase, a: WriteArtifacts): WriteScore {
     // Open and deferred skeletons naturally cite only their Feature; a specified one doing so restates the Feature.
     featureOnly: a.outline.scenarios.filter((s) => (s.kind === "specified" || s.kind === "derived") && s.effectiveSourceIds.every((id) => id.startsWith("FEAT-"))).length,
     downgraded: written.filter((s) => s.kind === "open" && ["specified", "derived"].includes(planned.get(s.id)?.kind ?? "")).length,
+    restating: a.outline.scenarios.filter((s) => {
+      const own = s.effectiveSourceIds.filter((id) => !id.startsWith("FEAT-"));
+      return s.kind === "specified" && own.length > 0 && own.every(restates);
+    }).length,
+    duplicates: duplicateScenarios(a.trace).length,
+    underivedPremises: Object.values(a.reviews).reduce((n, records) => n + records.reduce((m, r) => m + r.findings.filter((f) => f.premise).length, 0), 0),
+    contextValueFlags,
     invalidFiles: Object.entries(a.featureFiles).filter(([, text]) => gherkinErrors(text).length).map(([id]) => id),
   };
 }

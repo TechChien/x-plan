@@ -215,7 +215,7 @@ function checkScenario(
 const ID_KEYS = new Set(["id", "featureId", "featureIds", "actorIds", "dependsOn", "relatedIds", "targetId", "file", "evidence"]);
 
 /** What each citable item says, for finding the numbers it gives: every fact field, a Decision's conclusion and Answer. */
-function itemTexts(aligned: AlignedBrief): Map<string, string> {
+export function itemTexts(aligned: AlignedBrief): Map<string, string> {
   const texts = new Map<string, string>();
   const walk = (value: unknown, out: string[]) => {
     if (typeof value === "string") out.push(value);

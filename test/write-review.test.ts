@@ -1,6 +1,6 @@
 import { parse } from "yaml";
 import { describe, expect, test } from "vitest";
-import { judgeReview, markUnverified, reviewErrors, reviewToYaml, underReview, type ReviewSubmission } from "../src/write/review.ts";
+import { judgeReview, markUnverified, reviewErrors, reviewMemo, reviewToYaml, underReview, type ReviewSubmission } from "../src/write/review.ts";
 import type { WrittenFeature } from "../src/write/schema.ts";
 import { alignedFixture, outlineFixture, writtenFixture } from "./helpers/write.ts";
 
@@ -106,6 +106,17 @@ describe("judgeReview", () => {
     expect(outcome.records[3]).toMatchObject({ attempt: 2, findings: [{ ref: "steps[0]", verdict: "contradicts" }, { ref: "steps[0]", verdict: "invented-value", detail: "NT$500" }] });
   });
 
+  test("a derived scenario's premise that does not follow warns that its Thens may rest on it", () => {
+    const { units } = fixture();
+    const sub = clean(units);
+    sub.reviews.find((r) => r.unit === "SCN-2")!.lines[0]!.grounding = "none";
+    const outcome = judgeReview(units, sub, { attempt: 1, paths });
+    expect(outcome.records.find((r) => r.unit === "SCN-2")!.verdicts).toEqual(["underived"]);
+    expect(outcome.issues).toEqual([
+      { path: "scenarios[1].steps[0]", errors: [expect.stringMatching(/^does not necessarily follow from DEC-1: "Given 一般會員下單已 <天數> 天"\. It is a premise: .*every Then still follows/)] },
+    ]);
+  });
+
   test("on the last attempt flagged scenarios are kept as unverified with the reviewer's findings", () => {
     const { units, feature } = fixture();
     const sub = clean(units);
@@ -114,5 +125,34 @@ describe("judgeReview", () => {
     const marked: WrittenFeature = markUnverified(feature, outcome);
     expect(marked.scenarios[2]!.unverified).toEqual([expect.stringMatching(/^review: steps\[0\] contradicts DEC-5/)]);
     expect(marked.scenarios[0]!.unverified).toBeUndefined();
+  });
+});
+
+describe("reviewMemo", () => {
+  test("a unit the writer did not change keeps its review and is not sent again", () => {
+    const { units } = fixture();
+    const memo = reviewMemo();
+    expect(memo.fresh(units)).toEqual(units);
+    const first = clean(units);
+    first.reviews.find((r) => r.unit === "SCN-3")!.lines[0]!.contradicts = true;
+    expect(memo.merge(units, first)).toEqual(first);
+
+    expect(memo.fresh(units)).toEqual([]);
+    // Nothing sent: the flagged SCN-3 keeps its finding and still goes back to the writer.
+    const merged = memo.merge(units, { reviews: [] });
+    expect(merged).toEqual(first);
+    expect(judgeReview(units, merged, { attempt: 2, paths: new Map() }).flagged).toEqual(new Set(["SCN-3"]));
+  });
+
+  test("a changed line sends its unit again, and only that unit", () => {
+    const { units } = fixture();
+    const memo = reviewMemo();
+    memo.merge(units, clean(units));
+    const changed = units.map((u) => (u.unit === "SCN-2" ? { ...u, lines: u.lines.slice(1) } : u));
+    const fresh = memo.fresh(changed);
+    expect(fresh.map((u) => u.unit)).toEqual(["SCN-2"]);
+    const merged = memo.merge(changed, clean(fresh));
+    expect(merged.reviews.map((r) => r.unit)).toEqual(["background", "SCN-1", "SCN-2", "SCN-3", "SCN-4"]);
+    expect(merged.reviews.find((r) => r.unit === "SCN-2")!.lines.map((l) => l.ref)).toEqual(changed[2]!.lines.map((l) => l.ref));
   });
 });

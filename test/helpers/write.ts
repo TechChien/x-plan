@@ -73,7 +73,7 @@ export const scn = (title: string, kind: OutlineScenario["kind"], sourceIds: str
   ...extra,
 });
 
-/** Covers everything the fixture requires: FEAT-1/2, BR-2/3, AC-1/2, DEC-1/5/6, with DEC-4 marked not behavioural. */
+/** Covers everything the fixture requires: FEAT-1/2, BR-2/3, AC-1/2, NFR-1, DEC-1/5/6, with DEC-4 and DEC-3 marked not behavioural. */
 export function validOutline(): OutlineSubmission {
   return {
     features: [
@@ -95,7 +95,7 @@ export function validOutline(): OutlineSubmission {
         scenarios: [scn("退貨頁面的內容", "open", ["FEAT-2"], { agendaIds: ["OQ-4"] }), scn("退貨申請的回應時間", "specified", ["NFR-1"])],
       },
     ],
-    notBehavioral: [{ id: "DEC-4", reason: "只是名詞定義" }],
+    notBehavioral: [{ id: "DEC-4", reason: "只是名詞定義" }, { id: "DEC-3", reason: "退款方式不在這兩個 Feature 的範圍" }],
   };
 }
 

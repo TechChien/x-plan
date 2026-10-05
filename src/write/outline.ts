@@ -60,7 +60,6 @@ export function checkOutline(submission: OutlineSubmission, ctx: OutlineCheckCon
 
   const activeNew = new Set(aligned.decisions.filter((d) => d.status === "active" && d.effect === "new").map((d) => d.id));
   const briefFeatures = new Set(aligned.brief.features.map((f) => f.id));
-  const nfrTargets = new Map(aligned.brief.nonFunctional.map((n) => [n.id, Boolean(n.target?.trim())]));
   const seenFeatures = new Set<string>();
 
   const scenarioErrors = (s: OutlineScenario, ruleSource?: string): string[] => {
@@ -78,12 +77,6 @@ export function checkOutline(submission: OutlineSubmission, ctx: OutlineCheckCon
       }
       if (s.kind === "deferred" && !s.agendaIds.length) errors.push("a deferred scenario names the deferred Agenda Item it leaves open");
       if (s.kind === "open" && !s.agendaIds.length && !s.openReason?.trim()) errors.push("an open scenario with no Agenda Item needs openReason: what is missing");
-    }
-    const decided = effective.some((id) => id.startsWith("DEC-") && sets.citable.has(id));
-    for (const id of effective) {
-      if (nfrTargets.get(id) === false && !decided) {
-        errors.push(`${id} has no target: a Non-functional Requirement without a measurable target goes in 03-spec.md, not a scenario, unless a Decision gives one`);
-      }
     }
     return errors;
   };
@@ -123,7 +116,9 @@ export function checkOutline(submission: OutlineSubmission, ctx: OutlineCheckCon
     const blocked = sets.notBehavioralBlocked.get(n.id);
     if (blocked) errors.push(`${n.id} redefines ${blocked.terms.join(", ")}, which ${blocked.mentionedIn.join(", ")} uses: cite it in the scenarios for those`);
     else if (!sets.notBehavioralAllowed.includes(n.id)) {
-      errors.push(`${n.id} cannot be marked not behavioural: only an active Decision that is new, or that replaces only a Term, Actor, Entity or Dependency, can be`);
+      errors.push(
+        `${n.id} cannot be marked not behavioural: only a Non-functional Requirement, or an active Decision that is new, confirms an Assumption, or replaces only a Term, Actor, Entity or Dependency, can be`,
+      );
     }
     if (seenNotBehavioral.has(n.id)) errors.push(`${n.id} is marked twice`);
     if (!n.reason.trim()) errors.push("give the reason it describes no behaviour");

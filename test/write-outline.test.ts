@@ -150,17 +150,17 @@ describe("checkOutline", () => {
   });
 
   describe("rule 6: not behavioural", () => {
-    test("only Decisions allowed to be, each with a reason", () => {
+    test("only ids allowed to be, each with a reason", () => {
       const result = check(edit((o) => o.notBehavioral.push({ id: "DEC-1", reason: "x" }, { id: "DEC-5", reason: " " })));
       expect(messages(result)).toEqual([
-        expect.stringMatching(/^notBehavioral\[1\]: DEC-1 cannot be marked not behavioural/),
-        expect.stringMatching(/^notBehavioral\[2\]: .*reason/),
+        expect.stringMatching(/^notBehavioral\[2\]: DEC-1 cannot be marked not behavioural/),
+        expect.stringMatching(/^notBehavioral\[3\]: .*reason/),
       ]);
     });
 
     test("a Decision redefining a name that something else uses is refused, saying where it is used", () => {
       const result = check(edit((o) => o.notBehavioral.push({ id: "DEC-6", reason: "名詞" })));
-      expect(messages(result)).toEqual([expect.stringMatching(/^notBehavioral\[1\]: DEC-6 redefines 鑑賞期, which DEC-4 uses/)]);
+      expect(messages(result)).toEqual([expect.stringMatching(/^notBehavioral\[2\]: DEC-6 redefines 鑑賞期, which DEC-4 uses/)]);
     });
   });
 
@@ -187,16 +187,24 @@ describe("checkOutline", () => {
 
     test("a specified or derived scenario names no Agenda Item", () => {
       const result = check(edit((o) => (o.features[1]!.scenarios[1]!.agendaIds = ["OQ-4"])));
-      expect(messages(result)).toEqual([expect.stringMatching(/^features\[1\]\.scenarios\[1\]: .*only open and deferred scenarios/)]);
+      expect(messages(result)).toEqual([
+        expect.stringMatching(/^features\[1\]\.scenarios\[1\]: .*only open and deferred scenarios/),
+        expect.stringMatching(/^coverage: NFR-1 is cited by no scenario/),
+      ]);
     });
   });
 
-  test("rule 8: a Non-functional Requirement without a target is not a scenario unless a Decision gives one", () => {
+  test("rule 8: a Non-functional Requirement without a target may be a scenario, or marked not behavioural with the reason", () => {
     const aligned = alignedFixture();
     delete aligned.brief.nonFunctional[0]!.target;
-    expect(messages(check(validOutline(), { aligned }))).toEqual([expect.stringMatching(/^features\[1\]\.scenarios\[1\]: NFR-1 has no target/)]);
-    const withDecision = edit((o) => o.features[1]!.scenarios[1]!.sourceIds.push("DEC-4"));
-    expect(messages(check(withDecision, { aligned }))).toEqual([]);
+    expect(messages(check(validOutline(), { aligned }))).toEqual([]);
+    const marked = edit((o) => {
+      o.features[1]!.scenarios.pop();
+      o.notBehavioral.push({ id: "NFR-1", reason: "沒有可量測的門檻" });
+    });
+    expect(messages(check(marked, { aligned }))).toEqual([]);
+    const dropped = edit((o) => o.features[1]!.scenarios.pop());
+    expect(messages(check(dropped, { aligned }))).toEqual([expect.stringMatching(/^coverage: NFR-1 is cited by no scenario/)]);
   });
 
   describe("rule 9: Rule blocks", () => {
@@ -276,7 +284,7 @@ describe("applyOutline", () => {
 
   test("keeps what was marked not behavioural and what is still uncovered", () => {
     const kept = applyOutline(check(validOutline()).accepted, alignedFixture(), ["DEC-5"]);
-    expect(kept.notBehavioral).toEqual([{ id: "DEC-4", reason: "只是名詞定義" }]);
+    expect(kept.notBehavioral).toEqual([{ id: "DEC-4", reason: "只是名詞定義" }, { id: "DEC-3", reason: "退款方式不在這兩個 Feature 的範圍" }]);
     expect(kept.uncovered).toEqual(["DEC-5"]);
   });
 });

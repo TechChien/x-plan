@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { AlignedBrief } from "../src/clarify/aligned.ts";
-import { buildTrace, gherkinErrors, renderFeature, renderSpec } from "../src/write/render.ts";
+import { buildTrace, duplicateScenarios, gherkinErrors, renderFeature, renderSpec, type TracedScenario } from "../src/write/render.ts";
 import type { WriteOutline, WrittenFeature } from "../src/write/schema.ts";
 import { alignedDec, alignedFixture, outlineFixture, step, writtenFixture } from "./helpers/write.ts";
 
@@ -192,9 +192,51 @@ describe("renderSpec", () => {
     expect(md).toMatch(/## Open items[\s\S]*- OQ-9 \(unresolved, in no scenario\): 要支援多語系嗎？/);
   });
 
+  test("lists scenarios with the same Given and Then", () => {
+    const md = spec((f) => (f.written.get("FEAT-1")!.scenarios[2]!.steps[0]!.text = "會員在下單當天"));
+    expect(md).toMatch(/## Duplicate scenarios\n\n- SCN-1, SCN-3: same Given and Then — 下單當天取消/);
+    expect(spec(() => {})).toMatch(/## Duplicate scenarios\n\n_None._/);
+  });
+
   test("lists unverified scenarios with the reasons, and unwritten ones", () => {
     const md = spec((f) => (f.written.get("FEAT-1")!.scenarios[2]!.unverified = ["14 is not given by DEC-5"]));
     expect(md).toMatch(/## Unverified[\s\S]*- SCN-3 VIP 第 10 天取消: 14 is not given by DEC-5/);
     expect(md).toMatch(/## Unwritten[\s\S]*- FEAT-2: no writer result/);
+  });
+});
+
+describe("duplicateScenarios", () => {
+  const traced = (id: string, featureId: string, steps: [string, string][]): TracedScenario => ({
+    id,
+    featureId,
+    title: id,
+    kind: "specified",
+    status: "written",
+    sourceIds: [],
+    agendaIds: [],
+    steps: steps.map(([keyword, text]) => step(keyword as "Given", text, [])),
+    examples: [],
+  });
+
+  test("the same Given and Then across Features is one requirement written twice, whatever the When, case or quotes", () => {
+    const trace = {
+      features: [],
+      scenarios: [
+        traced("SCN-29", "FEAT-2", [["Given", "a CPE no longer has a device"], ["When", "the run submits"], ["Then", "nothing is sent for it"], ["And", "the service keeps `device_count`"]]),
+        traced("SCN-36", "FEAT-3", [["Given", "A CPE no longer has a device"], ["When", "the later run submits"], ["Then", "the service keeps device_count"], ["And", "nothing is sent for it"]]),
+      ],
+    };
+    expect(duplicateScenarios(trace)).toEqual([["SCN-29", "SCN-36"]]);
+  });
+
+  test("a shared Then under different Givens, as a derived edge has, is not a duplicate", () => {
+    const trace = {
+      features: [],
+      scenarios: [
+        traced("SCN-26", "FEAT-2", [["Given", "a tenant has resolved items"], ["When", "it is submitted"], ["Then", "one request carries them all"]]),
+        traced("SCN-27", "FEAT-2", [["Given", "a tenant has very many resolved items"], ["When", "it is submitted"], ["Then", "one request carries them all"]]),
+      ],
+    };
+    expect(duplicateScenarios(trace)).toEqual([]);
   });
 });

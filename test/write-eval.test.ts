@@ -74,10 +74,14 @@ describe("runWriteEval", () => {
       unwritten: 0,
       uncovered: 0,
       derived: 1,
-      notBehavioral: 1,
+      notBehavioral: 2,
       newFeatures: 0,
       featureOnly: 0,
       downgraded: 0,
+      restating: 0,
+      duplicates: 0,
+      underivedPremises: 0,
+      contextValueFlags: 0,
       invalidFiles: [],
     });
     expect(result.metrics.submitAttempts).toBeGreaterThan(0);
@@ -86,11 +90,37 @@ describe("runWriteEval", () => {
   test("finds stale wording and what is missing from derived content", async () => {
     const result = await evaluated();
     const labels = loadWriteCase(join(result.runDir, "..", "..", "..", "fixture", "write", "expected.yaml"));
-    const artifacts = readArtifacts(result.runDir, [])!;
+    const artifacts = readArtifacts(result.runDir, [], alignedFixture())!;
     artifacts.trace.scenarios[0]!.steps[0]!.text += "，下單 3 天內";
     const score = scoreWrite({ ...labels, mustHaveScenarios: [{ id: "same-day-derived", all: ["下單當天"], derived: true }] }, artifacts);
     expect(score.stale).toEqual([{ id: "old-window", scenario: "SCN-1" }]);
     expect(score.mustHave.missed).toEqual(["same-day-derived"]);
+  });
+
+  test("counts scenarios that only restate a reconcile or confirm Decision, duplicates and premises the review sent back", async () => {
+    const result = await evaluated();
+    const labels = loadWriteCase(join(result.runDir, "..", "..", "..", "fixture", "write", "expected.yaml"));
+    const artifacts = readArtifacts(result.runDir, [], alignedFixture())!;
+    // SCN-3 stands on DEC-5 under its Rule; standing on the confirm Decision DEC-3 alone, it restates it.
+    artifacts.outline.scenarios.find((s) => s.id === "SCN-3")!.effectiveSourceIds = ["FEAT-1", "DEC-3"];
+    artifacts.trace.scenarios.find((s) => s.id === "SCN-3")!.steps[0]!.text = "會員在下單當天";
+    artifacts.reviews["FEAT-1"]!.push({
+      attempt: 1,
+      unit: "SCN-2",
+      verdicts: ["underived"],
+      findings: [{ ref: "steps[0]", verdict: "underived", text: "Given 一般會員下單已 <天數> 天", sourceIds: ["DEC-1"], premise: true }],
+    });
+    expect(scoreWrite(labels, artifacts)).toMatchObject({ restating: 1, duplicates: 1, underivedPremises: 1 });
+  });
+
+  test("counts invented values that a context item also says", async () => {
+    const result = await evaluated();
+    const labels = loadWriteCase(join(result.runDir, "..", "..", "..", "fixture", "write", "expected.yaml"));
+    const artifacts = readArtifacts(result.runDir, [], alignedFixture())!;
+    const finding = (detail: string) => ({ ref: "steps[0]", verdict: "invented-value" as const, text: "Given 會員下單", sourceIds: ["DEC-1"], detail });
+    artifacts.reviews["FEAT-1"]!.push({ attempt: 1, unit: "SCN-2", verdicts: ["invented-value"], findings: [finding("會員"), finding("99")] });
+    // ACT-1 says 會員; nothing says 99.
+    expect(scoreWrite(labels, artifacts).contextValueFlags).toBe(1);
   });
 
   test("the report sums each case and lists what each run missed", async () => {

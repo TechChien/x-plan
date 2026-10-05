@@ -131,6 +131,39 @@ export function reviewErrors(submission: ReviewSubmission, units: ReviewUnit[]):
   ];
 }
 
+export type UnitReview = ReviewSubmission["reviews"][number];
+
+/** A unit's identity for the memo: its id and everything the reviewer judges. */
+const unitKey = (u: ReviewUnit) => JSON.stringify([u.unit, u.kind, u.sourceIds, u.lines.map((l) => [l.ref, l.text, l.sourceIds, l.derived])]);
+
+/**
+ * Across one writer's submissions, a unit the writer did not change keeps the review it already had: it is not sent to
+ * the reviewer again, so the same text cannot be judged twice with different results.
+ */
+export function reviewMemo() {
+  const seen = new Map<string, UnitReview>();
+  return {
+    /** The units that still need a review. */
+    fresh: (units: ReviewUnit[]) => units.filter((u) => !seen.has(unitKey(u))),
+    /** Records the reviewer's reviews of fresh units; returns a review of every unit, the unchanged ones from the memo. */
+    merge(units: ReviewUnit[], submission: ReviewSubmission): ReviewSubmission {
+      for (const u of units) {
+        const review = submission.reviews.find((r) => r.unit === u.unit);
+        if (review) seen.set(unitKey(u), review);
+      }
+      return { reviews: units.flatMap((u) => seen.get(unitKey(u)) ?? []) };
+    },
+  };
+}
+
+/** Steps before the scenario's first When (or first Then when it has no When): the premises its Thens rest on. */
+function premiseRefs(u: ReviewUnit): Set<string> {
+  const steps = u.lines.filter((l) => l.ref.startsWith("steps["));
+  const end = steps.findIndex((l) => /^When /.test(l.text));
+  const stop = end >= 0 ? end : steps.findIndex((l) => /^Then /.test(l.text));
+  return new Set(steps.slice(0, stop >= 0 ? stop : steps.length).map((l) => l.ref));
+}
+
 export interface ReviewFinding {
   ref: string;
   verdict: ScenarioReviewVerdict;
@@ -138,6 +171,8 @@ export interface ReviewFinding {
   sourceIds: string[];
   /** invented-value: the value; misattributed: the ids that do say it. */
   detail?: string;
+  /** underived: the line is a premise of a derived scenario, before its When. */
+  premise?: boolean;
 }
 
 /** Scenario Review's finding on one unit, kept in `03-trace.json` and for the eval. */
@@ -163,18 +198,24 @@ export function judgeReview(units: ReviewUnit[], submission: ReviewSubmission, c
   for (const u of units) {
     const review = submission.reviews.find((r) => r.unit === u.unit);
     const findings: ReviewFinding[] = [];
+    const premises = premiseRefs(u);
     for (const line of u.lines) {
       const report = review?.lines.find((l) => l.ref === line.ref);
       if (!report) continue;
       const cited = line.sourceIds.join(", ") || "nothing";
-      const found = (verdict: ScenarioReviewVerdict, detail?: string) =>
-        findings.push({ ref: line.ref, verdict, text: line.text, sourceIds: line.sourceIds, ...(detail ? { detail } : {}) });
+      const found = (verdict: ScenarioReviewVerdict, detail?: string, premise?: boolean) =>
+        findings.push({ ref: line.ref, verdict, text: line.text, sourceIds: line.sourceIds, ...(detail ? { detail } : {}), ...(premise ? { premise } : {}) });
       const errors: string[] = [];
       if (report.contradicts) {
         found("contradicts");
         errors.push(`contradicts ${cited}: "${line.text}". Correct it to agree with ${cited}`);
       }
-      if (report.grounding === "none" && line.derived) {
+      if (report.grounding === "none" && line.derived && premises.has(line.ref)) {
+        found("underived", undefined, true);
+        errors.push(
+          `does not necessarily follow from ${cited}: "${line.text}". It is a premise: if you remove it, check that every Then still follows without it; if one does not, remove that Then too or give openReason`,
+        );
+      } else if (report.grounding === "none" && line.derived) {
         found("underived");
         errors.push(`does not necessarily follow from ${cited}: "${line.text}". Remove what does not follow, or give openReason to make the scenario open`);
       } else if (report.grounding === "none") {

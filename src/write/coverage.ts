@@ -18,8 +18,10 @@ export interface CoverageSets {
   /** Ids a scenario or step may cite. */
   citable: Set<string>;
   forbidden: Map<string, ForbiddenReason>;
-  /** Decisions the outline may mark not behavioural instead of covering. */
+  /** Ids the outline may mark not behavioural instead of covering: Decisions and Non-functional Requirements. */
   notBehavioralAllowed: string[];
+  /** A confirm Decision is also covered by citing an Assumption it confirms: the two say the same thing. */
+  coveredVia: Map<string, string[]>;
   /**
    * Decisions that replace only named items (a Term, Actor, Entity or Dependency) but cannot be marked not behavioural
    * because something that must be covered uses one of the names: the scenario for it needs the new definition.
@@ -60,17 +62,21 @@ export function coverageSets(aligned: AlignedBrief): CoverageSets {
     ...features,
     ...brief.businessRules.map((r) => r.id).filter(notForbidden),
     ...brief.acceptanceCriteria.map((ac) => ac.id).filter(notForbidden),
-    ...active.filter((d) => d.effect !== "confirm").map((d) => d.id),
+    ...brief.nonFunctional.map((n) => n.id).filter(notForbidden),
+    ...active.map((d) => d.id),
   ];
+  const coveredVia = new Map(active.filter((d) => d.effect === "confirm" && d.confirms.length).map((d) => [d.id, [...d.confirms]]));
 
   // A Decision that redefines a name others use changes their behaviour too, e.g. a new length for 鑑賞期 changes the
   // return window of every rule that says 鑑賞期. A plain substring match errs toward requiring the citation.
   const names = namesById(aligned);
   const texts = mustCoverTexts(aligned, mustCover);
-  const notBehavioralAllowed: string[] = [];
+  // A Non-functional Requirement with no measurable target, or a confirmed Assumption about who does what, may have no
+  // behaviour to write; the outline says why instead, and 03-spec.md shows the reason.
+  const notBehavioralAllowed: string[] = brief.nonFunctional.map((n) => n.id).filter(notForbidden);
   const notBehavioralBlocked: CoverageSets["notBehavioralBlocked"] = new Map();
   for (const d of active) {
-    if (d.effect === "new") notBehavioralAllowed.push(d.id);
+    if (d.effect === "new" || d.effect === "confirm") notBehavioralAllowed.push(d.id);
     if (d.effect !== "replace" || d.supersedes.some((id) => BEHAVIOURAL.test(id))) continue;
     const terms = [...new Set(d.supersedes.flatMap((id) => names.get(id) ?? []))];
     const mentionedIn = [...texts].filter(([id, text]) => id !== d.id && terms.some((t) => text.includes(t.toLowerCase()))).map(([id]) => id);
@@ -79,7 +85,7 @@ export function coverageSets(aligned: AlignedBrief): CoverageSets {
   }
 
   const agenda = new Map(aligned.agenda.map((it) => [it.id, it.status]));
-  return { features, mustCover, citable, forbidden, notBehavioralAllowed, notBehavioralBlocked, agenda };
+  return { features, mustCover, citable, forbidden, notBehavioralAllowed, coveredVia, notBehavioralBlocked, agenda };
 }
 
 /**
@@ -133,6 +139,7 @@ function mustCoverTexts(aligned: AlignedBrief, mustCover: string[]): Map<string,
     ...brief.features.map((f) => [f.id, [f.name, f.description, ...f.inputs, ...f.outputs]] as [string, string[]]),
     ...brief.businessRules.map((r) => [r.id, [r.rule, ...r.conditions]] as [string, string[]]),
     ...brief.acceptanceCriteria.map((ac) => [ac.id, [ac.text, ac.given ?? "", ac.when ?? "", ac.then ?? ""]] as [string, string[]]),
+    ...brief.nonFunctional.map((n) => [n.id, [n.requirement, n.target ?? ""]] as [string, string[]]),
     ...aligned.decisions.map((d) => [d.id, [d.conclusion]] as [string, string[]]),
   ]);
   return new Map(mustCover.map((id) => [id, (all.get(id) ?? []).join("\n").toLowerCase()]));
@@ -141,5 +148,5 @@ function mustCoverTexts(aligned: AlignedBrief, mustCover: string[]): Map<string,
 /** What must be covered and is neither cited nor marked not behavioural, in `mustCover` order. */
 export function uncovered(sets: CoverageSets, covered: Iterable<string>): string[] {
   const seen = new Set(covered);
-  return sets.mustCover.filter((id) => !seen.has(id));
+  return sets.mustCover.filter((id) => !seen.has(id) && !(sets.coveredVia.get(id) ?? []).some((via) => seen.has(via)));
 }

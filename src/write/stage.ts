@@ -15,8 +15,8 @@ import { failSpan, inSpan } from "../telemetry/spans.ts";
 import { coverageSets } from "./coverage.ts";
 import { applyOutline, checkOutline, type OutlineCheckResult, type OutlineRejected } from "./outline.ts";
 import { buildOutlinePrompt, buildReviewPrompt, buildWriterPrompt } from "./prompts.ts";
-import { buildTrace, gherkinErrors, renderFeature, renderSpec } from "./render.ts";
-import { judgeReview, markUnverified, reviewErrors, ReviewSubmissionSchema, underReview, type ReviewSubmission, type ReviewUnit, type ScenarioReviewRecord } from "./review.ts";
+import { buildTrace, duplicateScenarios, gherkinErrors, renderFeature, renderSpec } from "./render.ts";
+import { judgeReview, markUnverified, reviewErrors, reviewMemo, ReviewSubmissionSchema, underReview, type ReviewSubmission, type ReviewUnit, type ScenarioReviewRecord } from "./review.ts";
 import { FeatureSubmissionSchema, OutlineSubmissionSchema, type FeatureSubmission, type OutlineSubmission, type WriteOutline, type WrittenFeature } from "./schema.ts";
 import { checkFeature, type FeatureIssue, type FeatureRejected } from "./writer.ts";
 
@@ -298,6 +298,7 @@ async function write(opts: WriteOptions): Promise<WriteReport> {
     const records: ScenarioReviewRecord[] = [];
     let reviewFailure: string | undefined;
     let reviewCount = 0;
+    const memo = reviewMemo();
     const outcome = await runTraced<FeatureSubmission, WriterResult>(
       await getBackend(),
       {
@@ -320,14 +321,15 @@ async function write(opts: WriteOptions): Promise<WriteReport> {
 
             const units = underReview(result.accepted, outline);
             if (!units.length) return accepted(result.accepted);
-            const review = await runReview(`${label}-review${++reviewCount}`, units);
+            const fresh = memo.fresh(units);
+            const review = fresh.length ? await runReview(`${label}-review${++reviewCount}`, fresh) : { reviews: [] };
             if (typeof review === "string") {
               reviewFailure = review;
               return accepted(result.accepted);
             }
             const paths = new Map<string, string>([["background", "background"]]);
             params.scenarios.forEach((s, i) => paths.has(s.id) || paths.set(s.id, `scenarios[${i}]`));
-            const judged = judgeReview(units, review, { attempt, paths });
+            const judged = judgeReview(units, memo.merge(units, review), { attempt, paths });
             records.push(...judged.records);
             if (count(judged.issues) && !isLast) return retry("submit_feature", judged.issues);
             return accepted(judged.flagged.size ? markUnverified(result.accepted, judged) : result.accepted);
@@ -379,8 +381,13 @@ async function write(opts: WriteOptions): Promise<WriteReport> {
     if (errors.length) return fail(`Rendering ${feature.id} produced invalid Gherkin, a bug in x-plan: ${errors.join("; ")}`);
     writeText(join(runDir, "features", `${feature.id}.feature`), text);
   }
+  const trace = buildTrace(outline, written);
+  for (const ids of duplicateScenarios(trace)) {
+    const warning = `${ids.join(", ")} have the same Given and Then; see 03-spec.md`;
+    if (!warnings.includes(warning)) warnings.push(warning); // a rewrite with --only starts from the earlier warnings
+  }
   writeText(join(runDir, "03-spec.md"), renderSpec({ aligned, outline, written }));
-  writeJson(join(runDir, "03-trace.json"), { ...buildTrace(outline, written), reviews });
+  writeJson(join(runDir, "03-trace.json"), { ...trace, reviews });
   writeJson(join(runDir, "03-written.json"), { features: Object.fromEntries(written), reviews, rejected } satisfies WrittenFile);
   writeJson(join(runDir, "03-rejected.json"), { outline: outlineRejected, features: rejected });
 

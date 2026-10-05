@@ -79,7 +79,7 @@ export async function runWriteEval(opts: WriteEvalOptions): Promise<WriteRunResu
         failures = [error instanceof Error ? error.message : String(error)];
       }
       const run = existsSync(join(runDir, "run.json")) ? (JSON.parse(readFileSync(join(runDir, "run.json"), "utf8")) as { agents?: AgentJson[]; promptHashes?: Record<string, string> }) : undefined;
-      const artifacts = readArtifacts(runDir, run?.agents ?? []);
+      const artifacts = readArtifacts(runDir, run?.agents ?? [], aligned);
       results.push({
         caseName: c.name,
         repeat: k,
@@ -96,7 +96,7 @@ export async function runWriteEval(opts: WriteEvalOptions): Promise<WriteRunResu
 }
 
 /** Undefined when the Run stopped before rendering (the outline failed). */
-export function readArtifacts(runDir: string, agents: AgentJson[]): WriteArtifacts | undefined {
+export function readArtifacts(runDir: string, agents: AgentJson[], aligned: AlignedBrief): WriteArtifacts | undefined {
   const file = (name: string) => join(runDir, name);
   if (!existsSync(file("03-trace.json"))) return undefined;
   const json = <T>(name: string): T => JSON.parse(readFileSync(file(name), "utf8")) as T;
@@ -110,6 +110,7 @@ export function readArtifacts(runDir: string, agents: AgentJson[]): WriteArtifac
       ? Object.fromEntries(readdirSync(featuresDir).filter((f) => f.endsWith(".feature")).map((f) => [f.replace(/\.feature$/, ""), readFileSync(join(featuresDir, f), "utf8")]))
       : {},
     agents,
+    aligned,
   };
 }
 
@@ -138,8 +139,8 @@ export function renderWriteReport(results: WriteRunResult[]): string {
   out.push(
     "## 總覽",
     "",
-    "| case | 成功 | 必要情境召回 | 被推翻內容 | 未決呈現 | 覆蓋退回 | Review 攔下 (多寫/相反/無出處數值/推導過頭/引錯) | @unverified | @unwritten | 未覆蓋 | 情境數 | @derived | notBehavioral | 新 Feature | 只引用 FEAT | 降為 open | 解析失敗 | 交卷 (check 錯) | writer cache | tokens in/out |",
-    "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+    "| case | 成功 | 必要情境召回 | 被推翻內容 | 未決呈現 | 覆蓋退回 | Review 攔下 (多寫/相反/無出處數值/推導過頭/引錯) | @unverified | @unwritten | 未覆蓋 | 情境數 | @derived | notBehavioral | 新 Feature | 只引用 FEAT | 降為 open | 只靠 reconcile/confirm | 重複組 | 前提被退回 | context 值被判無出處 | 解析失敗 | 交卷 (check 錯) | writer cache | tokens in/out |",
+    "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
   );
   for (const name of cases) {
     const rs = results.filter((r) => r.caseName === name);
@@ -164,6 +165,10 @@ export function renderWriteReport(results: WriteRunResult[]): string {
       String(sum((x) => x.newFeatures)),
       String(sum((x) => x.featureOnly)),
       String(sum((x) => x.downgraded)),
+      String(sum((x) => x.restating)),
+      String(sum((x) => x.duplicates)),
+      String(sum((x) => x.underivedPremises)),
+      String(sum((x) => x.contextValueFlags)),
       String(sum((x) => x.invalidFiles.length)),
       `${m((x) => x.submitAttempts)} (${m((x) => x.checkFailures)})`,
       String(m((x) => x.writerCacheReadRatio)),
@@ -173,7 +178,7 @@ export function renderWriteReport(results: WriteRunResult[]): string {
   }
   out.push(
     "",
-    "_比例為所有執行合計，情境數與執行指標為平均，其餘為合計。被推翻內容、覆蓋退回、Review 攔下越低越好；只引用 FEAT 是 Clarify 該問而沒問的 gherkin-gap；writer cache 不含第一個 writer。_",
+    "_比例為所有執行合計，情境數與執行指標為平均，其餘為合計。被推翻內容、覆蓋退回、Review 攔下越低越好；只引用 FEAT 是 Clarify 該問而沒問的 gherkin-gap；只靠 reconcile/confirm 與重複組越低越好（outline 重述已寫過的內容）；前提被退回是 Scenario Review 要求刪掉 derived 前提的次數，偏高時見 write-review-improvements.md §2.3；context 值被判無出處是 reviewer 沒看到 context 條目而誤判的次數，大於 0 時把 context 條目加進 reviewer 的 sources；writer cache 不含第一個 writer。_",
     "",
     "## 明細",
     "",

@@ -183,6 +183,33 @@ export function buildTrace(outline: WriteOutline, written: Map<string, WrittenFe
   };
 }
 
+/**
+ * Groups of written scenarios, across Features, with the same Given and the same Then: the same requirement written
+ * twice. Steps before the first When (or Then) count as Given, steps from the first Then on as Then; wording is
+ * compared ignoring case, quotes and backticks. A shared Then under different Givens, as a derived edge has, is not one.
+ */
+export function duplicateScenarios(trace: WriteTrace): string[][] {
+  const norm = (t: string) => t.toLowerCase().replace(/[`"'“”]/g, "").replace(/\s+/g, " ").trim();
+  const groups = new Map<string, string[]>();
+  for (const s of trace.scenarios) {
+    if (s.status !== "written") continue;
+    const given: string[] = [];
+    const then: string[] = [];
+    let part: "given" | "when" | "then" = "given";
+    for (const st of s.steps) {
+      if (st.keyword === "When") part = "when";
+      else if (st.keyword === "Then") part = "then";
+      if (part === "given") given.push(norm(st.text));
+      else if (part === "then") then.push(norm(st.text));
+    }
+    if (!then.length) continue;
+    const examples = s.examples.map((e) => [e.header, e.rows.map((r) => r.cells)]);
+    const key = JSON.stringify([[...new Set(given)].sort(), [...new Set(then)].sort(), examples]);
+    groups.set(key, [...(groups.get(key) ?? []), s.id]);
+  }
+  return [...groups.values()].filter((ids) => ids.length > 1);
+}
+
 export interface SpecRenderContext {
   aligned: AlignedBrief;
   outline: WriteOutline;
@@ -252,6 +279,10 @@ export function renderSpec(ctx: SpecRenderContext): string {
     ...trace.features.filter((f) => f.backgroundUnverified?.length).map((f) => `- ${f.id} Background: ${f.backgroundUnverified!.join("; ")}`),
     ...trace.scenarios.filter((s) => s.unverified?.length).map((s) => `- ${s.id} ${s.title}: ${s.unverified!.join("; ")}`),
   ]);
+  section(
+    "Duplicate scenarios",
+    duplicateScenarios(trace).map((ids) => `- ${ids.join(", ")}: same Given and Then — ${trace.scenarios.find((s) => s.id === ids[0])!.title}`),
+  );
   section("Unwritten", [
     ...trace.features.filter((f) => !f.written).map((f) => `- ${f.id}: no writer result`),
     ...trace.scenarios.filter((s) => s.status === "unwritten" && written.has(s.featureId)).map((s) => `- ${s.id} ${s.title}`),
