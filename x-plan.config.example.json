@@ -8,7 +8,16 @@
   },
   "thinking": "medium",
   "stages": {
-    "extract": { "thinking": "high" }
+    "extract": { "thinking": "high" },
+    "clarify": {
+      "thinking": "medium",
+      "review": { "thinking": "low" },
+      "consistency": { "thinking": "low" }
+    },
+    "write": {
+      "thinking": "medium",
+      "review": { "thinking": "low" }
+    }
   },
   "concurrency": 2,
   "telemetry": { "enabled": false, "captureContent": false },
